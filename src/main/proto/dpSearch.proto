@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package jigyasa_dp_search;
+
+option java_multiple_files = true;
+option java_package = "com.jigyasa.dp.search.protocol";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/descriptor.proto";
+import "google/rpc/status.proto";
+
+service JigyasaDataPlaneService {
+  rpc Index (IndexRequest) returns (IndexResponse);
+  rpc Lookup (LookupRequest) returns (LookupResponse);
+  rpc Query (QueryRequest) returns (QueryResponse);
+  rpc UpdateSchema (UpdateSchemaRequest) returns (UpdateSchemaResponse);
+}
+
+message IndexRequest {
+  repeated IndexItem item = 1;
+}
+
+message IndexItem {
+  IndexAction action = 1;
+  string document = 2;
+}
+
+enum IndexAction {
+  UPDATE = 0;
+  DELETE = 1;
+}
+
+message IndexResponse {
+  repeated google.rpc.Status itemResponse = 1;
+}
+
+message LookupRequest {
+  repeated string docKeys = 1;
+}
+
+message LookupResponse {
+  repeated string documents = 1;
+}
+
+message QueryRequest {
+}
+
+message QueryResponse {
+}
+
+message UpdateSchemaRequest {
+  string indexSchema = 1;
+}
+
+message UpdateSchemaResponse {
+}

@@ -1,0 +1,79 @@
+package com.jigyasa.dp.search.handlers;
+
+import com.jigyasa.dp.search.models.HandlerHelpers;
+import com.jigyasa.dp.search.models.InitializedIndexSchema;
+import com.jigyasa.dp.search.models.mappers.FieldMapperStrategy;
+import com.jigyasa.dp.search.protocol.LookupRequest;
+import com.jigyasa.dp.search.protocol.LookupResponse;
+import com.jigyasa.dp.search.services.RequestHandlerBase;
+import com.jigyasa.dp.search.utils.SourceVisitor;
+import io.grpc.stub.StreamObserver;
+import lombok.Getter;
+import org.apache.lucene.index.FieldInfo;
+import org.apache.lucene.index.StoredFieldVisitor;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.*;
+
+import java.nio.charset.StandardCharsets;
+
+public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, LookupResponse> {
+
+    private static StoredFieldVisitor getVisitor() {
+        return new StoredFieldVisitor() {
+            @Getter
+            byte[] src;
+
+            @Override
+            public void binaryField(FieldInfo fieldInfo, byte[] value) {
+                this.src = value;
+            }
+
+            @Override
+            public Status needsField(FieldInfo fieldInfo) {
+                return FieldMapperStrategy.SOURCE_FEILD_NAME.equals(fieldInfo.name) ? Status.YES : Status.NO;
+            }
+        };
+    }
+
+    private final HandlerHelpers helpers;
+
+    public LookupRequestHandler(HandlerHelpers helpers) {
+        super("Lookup");
+        this.helpers = helpers;
+    }
+
+    @Override
+    public void internalHandle(LookupRequest req, StreamObserver<LookupResponse> observer) {
+        try {
+            InitializedIndexSchema initializedSchema = helpers.getIndexSchemaManager().getIndexSchema().getInitializedSchema();
+            String keyFieldName = initializedSchema.getKeyFieldName();
+            IndexSearcher indexSearcher = helpers.getIndexSearcherManager().acquireSearcher();
+            BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            for (String s : req.getDocKeysList()) {
+                builder.add(new TermQuery(new Term(keyFieldName, s)), BooleanClause.Occur.FILTER);
+            }
+
+            TopDocs search = indexSearcher.search(builder.build(), req.getDocKeysCount());
+
+            LookupResponse.Builder response = LookupResponse.newBuilder();
+            for (ScoreDoc scoreDoc : search.scoreDocs) {
+                SourceVisitor visitor = new SourceVisitor();
+                indexSearcher.storedFields().document(scoreDoc.doc, visitor);
+
+                if (visitor.getSrc() != null) {
+                    response.addDocuments(new String(visitor.getSrc(), StandardCharsets.UTF_8));
+                }
+            }
+
+            observer.onNext(response.build());
+            observer.onCompleted();
+        } catch (Exception e) {
+            e.printStackTrace();
+            observer.onError(e);
+            observer.onCompleted();
+        }
+
+    }
+
+
+}

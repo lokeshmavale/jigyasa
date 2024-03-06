@@ -1,0 +1,20 @@
+{
+  "fields": [
+    {
+      "name": "Id",
+      "type": "STRING",
+      "key": true,
+      "searchable": false,
+      "filterable": true,
+      "sortable": false
+    },
+    {
+      "name": "Name",
+      "key": false,
+      "type": "STRING",
+      "searchable": true,
+      "filterable": true,
+      "sortable": true
+    }
+  ]
+}
