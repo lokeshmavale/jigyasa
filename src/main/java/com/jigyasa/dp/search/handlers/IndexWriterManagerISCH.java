@@ -1,5 +1,6 @@
 package com.jigyasa.dp.search.handlers;
 
+import com.jigyasa.dp.search.configs.EnvironmentVariables;
 import com.jigyasa.dp.search.models.HnswConfig;
 import com.jigyasa.dp.search.models.IndexSchema;
 import com.jigyasa.dp.search.utils.SchemaUtil;
@@ -9,6 +10,7 @@ import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.lucene104.Lucene104Codec;
 import org.apache.lucene.codecs.lucene104.Lucene104HnswScalarQuantizedVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
+import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -100,15 +102,30 @@ public class IndexWriterManagerISCH implements IndexSchemaChangeHandler {
 
     private IndexWriter initWriter(IndexSchema newIndexSchema) {
         try {
+            double ramBufferMb = Double.parseDouble(EnvironmentVariables.RAM_BUFFER_SIZE_MB.defaultIfEmpty());
+            boolean useCompoundFile = Boolean.parseBoolean(EnvironmentVariables.USE_COMPOUND_FILE.defaultIfEmpty());
+            int mergeMaxThreads = Integer.parseInt(EnvironmentVariables.MERGE_MAX_THREADS.defaultIfEmpty());
+            int mergeMaxMergeCount = Integer.parseInt(EnvironmentVariables.MERGE_MAX_MERGE_COUNT.defaultIfEmpty());
+
             IndexWriterConfig config = new IndexWriterConfig(newIndexSchema.getInitializedSchema().getIndexAnalyzer());
             config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
-            config.setUseCompoundFile(true);
+            config.setUseCompoundFile(useCompoundFile);
             config.setSimilarity(newIndexSchema.getInitializedSchema().getBm25Similarity());
-            config.setRAMBufferSizeMB(64.0);
+            config.setRAMBufferSizeMB(ramBufferMb);
+
             TieredMergePolicy mergePolicy = new TieredMergePolicy();
             mergePolicy.setSegmentsPerTier(10.0);
             config.setMergePolicy(mergePolicy);
+
+            ConcurrentMergeScheduler mergeScheduler = new ConcurrentMergeScheduler();
+            mergeScheduler.setMaxMergesAndThreads(mergeMaxMergeCount, mergeMaxThreads);
+            config.setMergeScheduler(mergeScheduler);
+
             config.setCodec(buildCodec(newIndexSchema.getHnswConfig()));
+
+            log.info("IndexWriter config: ramBuffer={}MB, compoundFile={}, mergeThreads={}, maxMerges={}",
+                    ramBufferMb, useCompoundFile, mergeMaxThreads, mergeMaxMergeCount);
+
             this.directory = FSDirectory.open(Path.of(indexCacheDirectory));
             return new IndexWriter(directory, config);
         } catch (IOException e) {

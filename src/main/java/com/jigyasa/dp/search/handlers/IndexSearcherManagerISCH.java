@@ -110,6 +110,14 @@ public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler {
         }
     }
 
+    public void forceRefresh() {
+        try {
+            searcherManager.maybeRefreshBlocking();
+        } catch (IOException e) {
+            throw new RuntimeException("Force refresh failed", e);
+        }
+    }
+
     private void closeCurrentSearcherManager() {
         if (searcherManager != null) {
             try {

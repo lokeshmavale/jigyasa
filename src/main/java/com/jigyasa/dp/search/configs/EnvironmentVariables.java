@@ -14,6 +14,14 @@ public class EnvironmentVariables {
     public static EnvironmentalVariable DOCID_OVERLAP_TIMEOUT_MS = new EnvironmentalVariable("DOCID_OVERLAP_TIMEOUT_MS", "30000");
     public static EnvironmentalVariable MAX_VECTOR_DIMENSION = new EnvironmentalVariable("MAX_VECTOR_DIMENSION", "2048");
     public static EnvironmentalVariable TRANSLOG_DIRECTORY = new EnvironmentalVariable("TRANSLOG_DIRECTORY", "/TransLog/");
+    public static EnvironmentalVariable RAM_BUFFER_SIZE_MB = new EnvironmentalVariable("RAM_BUFFER_SIZE_MB", "256");
+    public static EnvironmentalVariable USE_COMPOUND_FILE = new EnvironmentalVariable("USE_COMPOUND_FILE", "false");
+    public static EnvironmentalVariable MERGE_MAX_THREADS = new EnvironmentalVariable("MERGE_MAX_THREADS", "2");
+    public static EnvironmentalVariable MERGE_MAX_MERGE_COUNT = new EnvironmentalVariable("MERGE_MAX_MERGE_COUNT", "4");
+    // Translog durability: "request" = fsync per request (safest), "async" = periodic fsync (fastest)
+    public static EnvironmentalVariable TRANSLOG_DURABILITY = new EnvironmentalVariable("TRANSLOG_DURABILITY", "request");
+    // Async flush interval in ms (only used when TRANSLOG_DURABILITY=async)
+    public static EnvironmentalVariable TRANSLOG_FLUSH_INTERVAL_MS = new EnvironmentalVariable("TRANSLOG_FLUSH_INTERVAL_MS", "200");
 
     public record EnvironmentalVariable(String name, String defVal) {
 

@@ -1,5 +1,6 @@
 package com.jigyasa.dp.search.handlers;
 
+import com.jigyasa.dp.search.configs.EnvironmentVariables;
 import com.jigyasa.dp.search.handlers.translog.FileAppender;
 import com.jigyasa.dp.search.handlers.translog.TranslogAppender;
 import com.jigyasa.dp.search.models.IndexSchema;
@@ -23,6 +24,11 @@ public class TranslogAppenderManager implements IndexSchemaChangeHandler {
      */
     @Override
     public void initService() {
-        this.appender = new FileAppender(translogInitParam);
+        String durabilityStr = EnvironmentVariables.TRANSLOG_DURABILITY.defaultIfEmpty();
+        FileAppender.Durability durability = "async".equalsIgnoreCase(durabilityStr)
+                ? FileAppender.Durability.ASYNC
+                : FileAppender.Durability.REQUEST;
+        int flushIntervalMs = Integer.parseInt(EnvironmentVariables.TRANSLOG_FLUSH_INTERVAL_MS.defaultIfEmpty());
+        this.appender = new FileAppender(translogInitParam, durability, flushIntervalMs);
     }
 }

@@ -29,6 +29,13 @@ service JigyasaDataPlaneService {
 message IndexRequest {
   repeated IndexItem item = 1;
   string collection = 2;  // Collection name (empty = "default")
+  RefreshPolicy refresh = 3;  // Controls NRT visibility after indexing
+}
+
+enum RefreshPolicy {
+  WAIT_FOR = 0;    // Default: block until docs are searchable (consistent reads)
+  NONE = 1;        // Fire-and-forget: return immediately (best throughput for bulk)
+  IMMEDIATE = 2;   // Force immediate refresh (highest consistency, lowest throughput)
 }
 
 message IndexItem {

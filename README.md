@@ -17,20 +17,20 @@
 
 ## Why Jigyasa?
 
-LLM agents today store memory in **SQLite** — opaque BLOBs that can't be searched, ranked, or queried semantically. Vector databases like Pinecone handle embeddings but can't do full-text. Redis handles caching but not relevance scoring.
+LLM agents today cobble together **3–4 systems** for memory: SQLite for state, a vector DB for embeddings, maybe Elasticsearch for search, plus custom glue code for TTL and ranking. Each adds latency, complexity, and failure modes.
 
-**Jigyasa replaces all three with a single Lucene engine:**
+**Jigyasa replaces that entire stack with a single embedded engine:**
 
-| Capability | SQLite | Pinecone | Redis | **Jigyasa** |
-|---|---|---|---|---|
-| Full-text search (BM25) | ❌ | ❌ | ❌ | ✅ |
-| Vector search (HNSW) | ❌ | ✅ | ✅ | ✅ |
-| Hybrid search (RRF fusion) | ❌ | ❌ | ❌ | ✅ |
-| Structured filters | ❌ | ✅ | ❌ | ✅ |
-| Lucene query syntax | ❌ | ❌ | ❌ | ✅ |
-| Embeddable / on-premise | ✅ | ❌ | ✅ | ✅ |
-| Persistent + crash-safe | ✅ | ✅ | ❌ | ✅ |
-| Near-real-time (25ms) | ❌ | ❌ | ✅ | ✅ |
+| Capability | Typical Agent Stack | **Jigyasa** |
+|---|---|---|
+| State checkpointing | SQLite (opaque BLOBs) | ✅ Searchable documents |
+| Full-text search | ❌ Add Elasticsearch | ✅ BM25 built-in |
+| Vector search | ❌ Add Chroma/Weaviate | ✅ HNSW built-in |
+| Hybrid text + vector | ❌ Manual glue code | ✅ RRF fusion |
+| Structured filters | ❌ Scattered across DBs | ✅ Term, range, geo, boolean |
+| Memory tiers + TTL | ❌ Custom expiry logic | ✅ Native (working/episodic/semantic) |
+| Relevance ranking | ❌ No scoring | ✅ BM25 + recency decay |
+| Embeddable / on-premise | Varies | ✅ Single JAR, no cloud dependency |
 
 ## Features
 
@@ -104,6 +104,12 @@ All configuration via environment variables:
 | `INDEX_CACHE_DIR` | `/data/index` | Lucene index directory |
 | `TRANSLOG_DIRECTORY` | `/data/translog` | Write-ahead log directory |
 | `SERVER_MODE` | `READ_WRITE` | `READ`, `WRITE`, or `READ_WRITE` |
+| `TRANSLOG_DURABILITY` | `request` | `request` (fsync per op) or `async` (periodic fsync) |
+| `TRANSLOG_FLUSH_INTERVAL_MS` | `200` | Async mode fsync interval (ms) |
+| `RAM_BUFFER_SIZE_MB` | `256` | Lucene RAM buffer before flush |
+| `USE_COMPOUND_FILE` | `false` | Merge into compound files (slower writes, fewer FDs) |
+| `MERGE_MAX_THREADS` | `2` | Concurrent merge threads |
+| `MERGE_MAX_MERGE_COUNT` | `4` | Max concurrent merges |
 
 ## API Reference
 
@@ -245,16 +251,47 @@ count = stub.Count(pb.CountRequest(collection="memories"))
 └─────────────────────────────────────────────────┘
 ```
 
+## Performance Benchmarks
+
+Head-to-head against Elasticsearch 8.13.0 on the same machine (10K HTTP log docs, single shard, force-merged):
+
+### Query Latency
+
+| Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup |
+|---|---|---|---|
+| Text search (BM25) | **3.08ms** | 7.69ms | **2.5x** |
+| Term filter | **1.88ms** | 6.45ms | **3.4x** |
+| Range filter | **1.71ms** | 6.41ms | **3.7x** |
+| Boolean compound | **1.32ms** | 6.84ms | **5.2x** |
+| Query string | **1.52ms** | 6.91ms | **4.5x** |
+| Match-all + sort | **1.29ms** | 6.47ms | **5.0x** |
+| Count API | **0.79ms** | 5.55ms | **7.0x** |
+| Text + filter combo | **1.73ms** | 7.17ms | **4.1x** |
+
+**Average: 1.67ms vs 6.69ms — Jigyasa is 4x faster on queries.**
+
+### Bulk Indexing Throughput
+
+| Batch Size | Jigyasa (REQUEST) | Jigyasa (ASYNC) | ES 8.13 |
+|---|---|---|---|
+| 100 | 4,262 docs/s | 6,657 docs/s | 3,992 docs/s |
+| 500 | **13,483 docs/s** | **17,718 docs/s** | 10,546 docs/s |
+
+*Why faster? Embedded Lucene (no HTTP/JSON parsing, no shard routing, gRPC binary protocol). ES reference numbers include its full REST stack overhead.*
+
 ## Performance Tuning
 
 | Setting | Value | Rationale |
 |---|---|---|
-| RAM buffer | 64 MB | Batch in-memory before flush |
+| RAM buffer | 256 MB | Large batches stay in memory before flush |
+| Compound files | Off | Faster writes, slightly more file descriptors |
 | Merge policy | TieredMergePolicy (10 seg/tier) | Balanced read/write |
+| Merge scheduler | 2 threads, 4 max merges | Parallel merges without throttling |
 | NRT min staleness | 25 ms | Fast refresh for interactive use |
 | NRT max staleness | 1 s | Upper bound when no waiters |
+| Translog durability | REQUEST (default) | fsync per op, zero data loss |
+| Translog async interval | 200 ms | Periodic fsync when `TRANSLOG_DURABILITY=async` |
 | QueryParser cache | ThreadLocal per field | Avoid per-query allocation |
-| JSON parsing | Parse once per hit | Single parse for key + projection |
 | HNSW | maxConn=16, beamWidth=100 | Good recall/speed tradeoff |
 
 ## Building from Source

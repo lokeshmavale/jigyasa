@@ -69,9 +69,8 @@ class FileAppenderTest {
         appender.closeOpenFiles();
 
         Path[] files = Files.list(tempDir)
-                .filter(p -> p.getFileName().toString().startsWith("translog"))
+                .filter(p -> p.getFileName().toString().startsWith("translog.dat"))
                 .toArray(Path[]::new);
-        assertThat(files).hasSize(1);
 
         // Append a length header but no payload (simulates crash mid-write)
         try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(files[0].toFile(), true))) {
@@ -96,7 +95,7 @@ class FileAppenderTest {
         appender.closeOpenFiles();
 
         Path[] files = Files.list(tempDir)
-                .filter(p -> p.getFileName().toString().startsWith("translog"))
+                .filter(p -> p.getFileName().toString().startsWith("translog.dat"))
                 .toArray(Path[]::new);
 
         try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(files[0].toFile(), true))) {

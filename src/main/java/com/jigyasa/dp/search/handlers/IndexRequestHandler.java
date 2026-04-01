@@ -8,6 +8,7 @@ import com.jigyasa.dp.search.models.mappers.FieldMapperStrategy;
 import com.jigyasa.dp.search.protocol.IndexItem;
 import com.jigyasa.dp.search.protocol.IndexRequest;
 import com.jigyasa.dp.search.protocol.IndexResponse;
+import com.jigyasa.dp.search.protocol.RefreshPolicy;
 import com.jigyasa.dp.search.services.RequestHandlerBase;
 import com.jigyasa.dp.search.utils.DocIdOverlapLock;
 import com.jigyasa.dp.search.utils.SystemFields;
@@ -54,8 +55,16 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             IndexSchema indexSchema = handlerHelpers.getIndexSchemaManager().getIndexSchema();
             IndexResult result = processIndexRequests(req, indexSchema, writer, lock);
             handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
-            // NRT: wait for all write operations to become searchable
-            handlerHelpers.getIndexSearcherManager().waitForGeneration(result.maxSeqNo());
+            // NRT refresh based on client's requested policy
+            RefreshPolicy refresh = req.getRefresh();
+            if (refresh == RefreshPolicy.NONE) {
+                // Fire-and-forget: best throughput for bulk ingestion
+            } else if (refresh == RefreshPolicy.IMMEDIATE) {
+                handlerHelpers.getIndexSearcherManager().forceRefresh();
+            } else {
+                // WAIT_FOR (default): block until docs are searchable
+                handlerHelpers.getIndexSearcherManager().waitForGeneration(result.maxSeqNo());
+            }
             observer.onNext(result.response());
             observer.onCompleted();
         } catch (Exception e) {
