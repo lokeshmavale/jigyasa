@@ -2,8 +2,10 @@ package com.jigyasa.dp.search.query;
 
 import com.jigyasa.dp.search.protocol.SearchAfterToken;
 import org.apache.lucene.search.*;
+import org.apache.lucene.util.BytesRef;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -54,8 +56,8 @@ public class QueryExecutor {
             case LONG -> Long.parseLong(value);
             case DOUBLE -> Double.parseDouble(value);
             case FLOAT, SCORE -> Float.parseFloat(value);
-            case STRING -> new org.apache.lucene.util.BytesRef(
-                    value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            case STRING -> new BytesRef(
+                    value.getBytes(StandardCharsets.UTF_8));
             default -> value;
         };
     }

@@ -7,6 +7,8 @@ import io.grpc.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.TimeUnit;
+
 public class GrpcServerWrapper {
     private static final Logger log = LoggerFactory.getLogger(GrpcServerWrapper.class);
 
@@ -49,10 +51,10 @@ public class GrpcServerWrapper {
     public void shutdown() {
         try {
             server.shutdown();
-            if (!server.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)) {
+            if (!server.awaitTermination(15, TimeUnit.SECONDS)) {
                 log.warn("gRPC server did not terminate in 15s, forcing shutdown");
                 server.shutdownNow();
-                server.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+                server.awaitTermination(5, TimeUnit.SECONDS);
             }
             registry.shutdownAll();
             log.info("Server shut down gracefully");

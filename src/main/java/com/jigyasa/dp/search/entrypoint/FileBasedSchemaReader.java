@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -21,7 +23,12 @@ public class FileBasedSchemaReader implements IndexSchemaReader {
         try {
             if (filePath.isEmpty()) {
                 log.warn("No schema path configured — using built-in SampleSchema.json (test mode)");
-                return SchemaUtil.parseSchema(Files.readString(Path.of(this.getClass().getResource("/schema/SampleSchema.json").toURI())));
+                try (InputStream is = getClass().getResourceAsStream("/schema/SampleSchema.json")) {
+                    if (is == null) {
+                        throw new IllegalStateException("Built-in SampleSchema.json not found on classpath");
+                    }
+                    return SchemaUtil.parseSchema(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+                }
             }
             log.info("Loading schema from {}", filePath.get());
             return SchemaUtil.parseSchema(Files.readString(filePath.get()));

@@ -18,6 +18,8 @@ import com.google.rpc.Code;
 import com.google.rpc.Status;
 import io.grpc.stub.StreamObserver;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.Term;
@@ -30,6 +32,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexResponse> {
+    private static final Logger log = LoggerFactory.getLogger(IndexRequestHandler.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final DocIdOverlapLock lock;
     private final CollectionRegistry registry;
@@ -56,7 +59,9 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             observer.onNext(result.response());
             observer.onCompleted();
         } catch (Exception e) {
-            observer.onError(e);
+            log.error("Index request failed", e);
+            // FQN required: io.grpc.Status collides with com.google.rpc.Status import
+            observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
         } finally {
 
             if (indexWriterManager != null) {

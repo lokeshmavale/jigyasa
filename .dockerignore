@@ -1,0 +1,9 @@
+.git
+.gradle
+build
+*.class
+*.jar
+.idea
+*.iml
+IndexData
+TransLog

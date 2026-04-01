@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  jigyasa:
+    build: .
+    container_name: jigyasa
+    ports:
+      - "50051:50051"
+    volumes:
+      - jigyasa-index:/data/index
+      - jigyasa-translog:/data/translog
+    environment:
+      - GRPC_SERVER_PORT=50051
+      - INDEX_CACHE_DIR=/data/index
+      - TRANSLOG_DIRECTORY=/data/translog
+      - SERVER_MODE=READ_WRITE
+      - JAVA_OPTS=-Xms256m -Xmx1g -XX:+UseG1GC
+    restart: unless-stopped
+
+volumes:
+  jigyasa-index:
+  jigyasa-translog:

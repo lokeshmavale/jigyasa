@@ -3,8 +3,14 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'com.google.protobuf' version '0.9.6'
+    id 'com.gradleup.shadow' version '9.0.0-beta12'
     id 'idea'
     id 'jvm-test-suite'
+    id 'application'
+}
+
+application {
+    mainClass = 'com.jigyasa.dp.search.entrypoint.Main'
 }
 
 // --- Version Catalog ---

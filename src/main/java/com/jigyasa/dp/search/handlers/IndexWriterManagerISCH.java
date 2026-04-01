@@ -9,6 +9,7 @@ import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.lucene104.Lucene104Codec;
 import org.apache.lucene.codecs.lucene104.Lucene104HnswScalarQuantizedVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.TieredMergePolicy;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -180,11 +182,11 @@ public class IndexWriterManagerISCH implements IndexSchemaChangeHandler {
      * Returns null if no index exists or no schema is stored in commit data.
      */
     public static IndexSchema readPersistedSchema(String indexDir) {
-        java.nio.file.Path path = Path.of(indexDir);
-        if (!java.nio.file.Files.exists(path)) return null;
+        Path path = Path.of(indexDir);
+        if (!Files.exists(path)) return null;
         try (Directory dir = FSDirectory.open(path)) {
-            if (!org.apache.lucene.index.DirectoryReader.indexExists(dir)) return null;
-            try (org.apache.lucene.index.DirectoryReader reader = org.apache.lucene.index.DirectoryReader.open(dir)) {
+            if (!DirectoryReader.indexExists(dir)) return null;
+            try (DirectoryReader reader = DirectoryReader.open(dir)) {
                 Map<String, String> commitData = reader.getIndexCommit().getUserData();
                 String schemaJson = commitData.get(COMMIT_DATA_SCHEMA_KEY);
                 if (schemaJson == null || schemaJson.isEmpty()) return null;
