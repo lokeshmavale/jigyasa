@@ -4,19 +4,22 @@ import com.jigyasa.dp.search.services.ConfigSupplierModule;
 import com.jigyasa.dp.search.services.ServiceModules;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Main {
+    private static final Logger log = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) {
         try {
             Injector injector = Guice.createInjector(new ServiceModules(), new ConfigSupplierModule());
             GrpcServerWrapper server = injector.getInstance(GrpcServerWrapper.class);
             server.start();
-            System.out.println("Server Started Successfully");
+            log.info("Server started successfully");
             server.waitTillShutdown();
         } catch (Exception e) {
-            //Todo: Add proper exception handling
-            e.printStackTrace();
+            log.error("Fatal error during server startup", e);
+            System.exit(1);
         }
     }
 }

@@ -6,7 +6,6 @@ import com.jigyasa.dp.search.text.AnalyzerFactory;
 import com.jigyasa.dp.search.text.AnalyzerNames;
 import com.jigyasa.dp.search.text.PerFieldAnalyzer;
 import com.google.common.collect.ImmutableMap;
-import com.jigyasa.dp.search.models.*;
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -33,19 +32,8 @@ public class InitializedSchemaISCH implements IndexSchemaChangeHandler {
         initFieldMap(newIndexSchema, initializedIndexSchema);
         initAnalyzers(newIndexSchema, initializedIndexSchema);
         initSimilarity(newIndexSchema, initializedIndexSchema);
-        initHNSWConfigs(newIndexSchema, initializedIndexSchema);
 
         newIndexSchema.setInitializedSchema(initializedIndexSchema);
-    }
-
-    private void initHNSWConfigs(IndexSchema newIndexSchema, InitializedIndexSchema initializedIndexSchema) {
-        if (newIndexSchema.getHNSWConfigs() != null && newIndexSchema.getHNSWConfigs().length > 0) {
-            Map<String, HNSWConfig> hnswConfigMap = new HashMap<>(newIndexSchema.getHNSWConfigs().length);
-            for (HNSWConfig config : newIndexSchema.getHNSWConfigs()) {
-                hnswConfigMap.put(config.getName(), config);
-            }
-            initializedIndexSchema.setHNSWConfigMap(ImmutableMap.copyOf(hnswConfigMap));
-        }
     }
 
     private void initSimilarity(IndexSchema newIndexSchema, InitializedIndexSchema newSchema) {
@@ -78,7 +66,6 @@ public class InitializedSchemaISCH implements IndexSchemaChangeHandler {
                 newSchema.setKeyField(field);
             }
             fieldMap.put(field.getName(), field);
-            //A new FieldMapper for every field
         }
 
         if (newSchema.getKeyField() == null) {
@@ -86,7 +73,6 @@ public class InitializedSchemaISCH implements IndexSchemaChangeHandler {
         }
 
         newSchema.setFieldLookupMap(ImmutableMap.copyOf(fieldMap));
-        // This should be separate per thread
         newSchema.setFieldMapperStrategyMap(ThreadLocal.withInitial(() -> createFieldMapperStrategyMap(fieldMap)));
     }
 

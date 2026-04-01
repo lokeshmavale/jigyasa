@@ -13,8 +13,8 @@ public class PerFieldAnalyzer extends DelegatingAnalyzerWrapper {
 
     public PerFieldAnalyzer(Map<String, Analyzer> perFieldAnalyzerMap, Map<String, SchemaField> fieldMap) {
         super(PER_FIELD_REUSE_STRATEGY);
-        this.perFieldAnalyzerMap = perFieldAnalyzerMap;
-        this.schemaFieldMap = fieldMap;
+        this.perFieldAnalyzerMap = Map.copyOf(perFieldAnalyzerMap);
+        this.schemaFieldMap = Map.copyOf(fieldMap);
     }
 
     @Override

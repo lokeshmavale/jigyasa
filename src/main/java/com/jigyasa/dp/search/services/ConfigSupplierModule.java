@@ -6,7 +6,6 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import com.google.inject.name.Named;
-import lombok.SneakyThrows;
 
 import java.nio.file.Path;
 import java.util.Optional;
@@ -37,7 +36,6 @@ public class ConfigSupplierModule extends AbstractModule {
     @Provides
     @Singleton
     @Named("IndexSchemaPath")
-    @SneakyThrows
     public Optional<Path> provideIndexSchemaPath() {
         if (null != EnvironmentVariables.INDEX_SCHEMA_PATH.get()) {
             return Optional.of(Path.of(EnvironmentVariables.INDEX_SCHEMA_PATH.get()));

@@ -9,7 +9,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-public class FileUtils {
+public final class FileUtils {
+
+    private FileUtils() {}
 
     public static List<Path> listFilesWithPrefix(Path dir, String prefix, boolean sort) {
         List<Path> paths = new ArrayList<>();

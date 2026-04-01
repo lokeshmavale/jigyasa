@@ -27,7 +27,12 @@ public class StringFieldMapper extends FieldMapperStrategy {
     }
 
     protected void addStringToDoc(Document doc, SchemaField schemaField, String val) {
-        if (schemaField.isKey() || schemaField.isFilterable()) {
+        if (schemaField.isKey()) {
+            // Key field needs raw name indexed for updateDocument/deleteDocuments Term matching
+            doc.add(getFilterableField(schemaField, val));
+            Field keyField = new StringField(schemaField.getName(), val, Field.Store.NO);
+            doc.add(keyField);
+        } else if (schemaField.isFilterable()) {
             doc.add(getFilterableField(schemaField, val));
         }
 

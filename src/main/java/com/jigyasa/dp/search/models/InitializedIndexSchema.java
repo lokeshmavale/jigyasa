@@ -15,7 +15,6 @@ public class InitializedIndexSchema {
     private Analyzer indexAnalyzer;
     private Analyzer searchAnalyzer;
     private Similarity bm25Similarity;
-    private Map<String, HNSWConfig> HNSWConfigMap;
 
     public String getKeyFieldName() {
         return keyField.getName();

@@ -1,5 +1,6 @@
 package com.jigyasa.dp.search.handlers;
 
+import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.InitializedIndexSchema;
 import com.jigyasa.dp.search.models.mappers.FieldMapperStrategy;
@@ -35,22 +36,25 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
         };
     }
 
-    private final HandlerHelpers helpers;
+    private final CollectionRegistry registry;
 
-    public LookupRequestHandler(HandlerHelpers helpers) {
+    public LookupRequestHandler(CollectionRegistry registry) {
         super("Lookup");
-        this.helpers = helpers;
+        this.registry = registry;
     }
 
     @Override
     public void internalHandle(LookupRequest req, StreamObserver<LookupResponse> observer) {
+        HandlerHelpers helpers = registry.resolveHelpers(req.getCollection());
+        IndexSearcher indexSearcher = null;
         try {
             InitializedIndexSchema initializedSchema = helpers.getIndexSchemaManager().getIndexSchema().getInitializedSchema();
             String keyFieldName = initializedSchema.getKeyFieldName();
-            IndexSearcher indexSearcher = helpers.getIndexSearcherManager().acquireSearcher();
+            indexSearcher = helpers.getIndexSearcherManager().acquireSearcher();
             BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            builder.setMinimumNumberShouldMatch(1);
             for (String s : req.getDocKeysList()) {
-                builder.add(new TermQuery(new Term(keyFieldName, s)), BooleanClause.Occur.FILTER);
+                builder.add(new TermQuery(new Term(keyFieldName, s)), BooleanClause.Occur.SHOULD);
             }
 
             TopDocs search = indexSearcher.search(builder.build(), req.getDocKeysCount());
@@ -68,9 +72,15 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
             observer.onNext(response.build());
             observer.onCompleted();
         } catch (Exception e) {
-            e.printStackTrace();
             observer.onError(e);
-            observer.onCompleted();
+        } finally {
+            if (indexSearcher != null) {
+                try {
+                    helpers.getIndexSearcherManager().releaseSearcher(indexSearcher);
+                } catch (Exception e) {
+                    // Best-effort release
+                }
+            }
         }
 
     }

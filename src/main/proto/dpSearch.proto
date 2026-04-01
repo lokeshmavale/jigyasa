@@ -13,21 +13,41 @@ service JigyasaDataPlaneService {
   rpc Index (IndexRequest) returns (IndexResponse);
   rpc Lookup (LookupRequest) returns (LookupResponse);
   rpc Query (QueryRequest) returns (QueryResponse);
+  rpc DeleteByQuery (DeleteByQueryRequest) returns (DeleteByQueryResponse);
   rpc UpdateSchema (UpdateSchemaRequest) returns (UpdateSchemaResponse);
+
+  // Collection lifecycle
+  rpc CreateCollection (CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc CloseCollection (CloseCollectionRequest) returns (CloseCollectionResponse);
+  rpc OpenCollection (OpenCollectionRequest) returns (OpenCollectionResponse);
+  rpc ListCollections (ListCollectionsRequest) returns (ListCollectionsResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc ForceMerge (ForceMergeRequest) returns (ForceMergeResponse);
+  rpc Count (CountRequest) returns (CountResponse);
 }
 
 message IndexRequest {
   repeated IndexItem item = 1;
+  string collection = 2;  // Collection name (empty = "default")
 }
 
 message IndexItem {
   IndexAction action = 1;
   string document = 2;
+  MemoryTier memory_tier = 3;   // Memory tier (default: SEMANTIC = permanent)
+  int32 ttl_seconds = 4;        // Custom TTL override. 0 = use tier default.
+  string tenant_id = 5;         // Tenant ID for multi-tenant isolation (optional)
 }
 
 enum IndexAction {
   UPDATE = 0;
   DELETE = 1;
+}
+
+enum MemoryTier {
+  SEMANTIC = 0;    // Permanent storage (facts, preferences). No expiry.
+  EPISODIC = 1;    // Session/conversation memory. Default TTL: 24 hours.
+  WORKING = 2;     // Scratchpad/transient state. Default TTL: 5 minutes.
 }
 
 message IndexResponse {
@@ -36,6 +56,7 @@ message IndexResponse {
 
 message LookupRequest {
   repeated string docKeys = 1;
+  string collection = 2;  // Collection name (empty = "default")
 }
 
 message LookupResponse {
@@ -43,14 +64,276 @@ message LookupResponse {
 }
 
 message QueryRequest {
+  // Full-text search query string (BM25 scored)
+  string text_query = 1;
+  // Field to run text query against (empty = default search field)
+  string text_field = 2;
+
+  // KNN vector search
+  VectorQuery vector_query = 3;
+
+  // Filters applied as non-scoring constraints
+  repeated FilterClause filters = 4;
+
+  // Pagination
+  int32 top_k = 5;       // Max results to return (default: 10)
+  int32 offset = 6;      // Skip first N results (use search_after for deep pagination)
+
+  // Sort (empty = sort by relevance score)
+  repeated SortClause sort = 7;
+
+  // If true, include _src document in response
+  bool include_source = 8;
+
+  // Hybrid search: weight for text vs vector (0.0 = vector only, 1.0 = text only)
+  float text_weight = 9;
+
+  // Cursor-based deep pagination: pass the search_after token from previous response
+  SearchAfterToken search_after = 10;
+
+  // Recency decay boost: exponentially boost recent documents by _indexed_at field.
+  // Only applied when ttlEnabled=true in schema (system fields must exist).
+  RecencyDecay recency_decay = 11;
+
+  // Tenant ID for multi-tenant isolation. When set, only docs matching this tenant are returned.
+  string tenant_id = 12;
+
+  // Collection name (empty = "default")
+  string collection = 13;
+
+  // Exact/near-exact phrase search (scored by BM25)
+  string phrase_query = 14;
+  // Field for phrase query (empty = search all searchable fields)
+  string phrase_field = 15;
+  // Slop: max number of positions between terms (0 = exact phrase, default: 0)
+  int32 phrase_slop = 16;
+
+  // Fuzzy text search (typo-tolerant, scored by BM25)
+  string fuzzy_query = 17;
+  // Field for fuzzy query (empty = search all searchable fields)
+  string fuzzy_field = 18;
+  // Max edit distance (0-2, default: 2). Lucene maximum is 2.
+  int32 max_edits = 19;
+  // Length of common prefix that must match exactly (default: 0)
+  int32 prefix_length = 20;
+
+  // Prefix search: matches terms starting with this prefix
+  string prefix_query = 21;
+  // Field for prefix query (empty = search all searchable fields)
+  string prefix_field = 22;
+
+  // Minimum score threshold: hits with score below this are excluded from results.
+  // Default: 0.0 (no threshold). Only meaningful for scored queries (text/hybrid).
+  float min_score = 23;
+
+  // Field projection: only include these fields from _src in response.
+  // Empty = include all fields (when include_source=true).
+  // When set, include_source is implicitly true for projected fields.
+  repeated string source_fields = 24;
+
+  // Lucene query string syntax: supports AND/OR/NOT, ranges [10 TO 99],
+  // wildcards (deploy*), fuzzy (kubernetes~2), phrases ("machine learning"),
+  // field-scoped (title:kubernetes), boost (title:ml^2.0), grouping with ().
+  // When set, takes precedence over text_query/phrase_query/fuzzy_query/prefix_query.
+  string query_string = 25;
+  // Default field for query_string when no field: prefix is used (empty = first searchable field)
+  string query_string_default_field = 26;
+}
+
+message VectorQuery {
+  string field = 1;           // Vector field name
+  repeated float vector = 2;  // Query vector
+  int32 k = 3;                // Number of nearest neighbors
+}
+
+message FilterClause {
+  string field = 1;
+  oneof filter {
+    TermFilter term_filter = 2;
+    RangeFilter range_filter = 3;
+    GeoDistanceFilter geo_distance_filter = 4;
+    GeoBoundingBoxFilter geo_bounding_box_filter = 5;
+    ExistsFilter exists_filter = 6;
+    CompoundFilter compound_filter = 7;
+  }
+}
+
+message ExistsFilter {
+  bool must_exist = 1;  // true = field must exist, false = field must NOT exist
+}
+
+// Boolean composition of filters: AND / OR / NOT semantics.
+// Supports nesting for complex queries.
+message CompoundFilter {
+  enum Operator {
+    AND = 0;     // All must match (default)
+    OR = 1;      // At least one must match
+  }
+  Operator operator = 1;
+  repeated FilterClause must = 2;       // All must match
+  repeated FilterClause should = 3;     // At least one must match (OR)
+  repeated FilterClause must_not = 4;   // None must match (exclusion)
+}
+
+// Matches documents within a radius from a center point.
+message GeoDistanceFilter {
+  double lat = 1;              // Center latitude
+  double lon = 2;              // Center longitude
+  double distance_meters = 3;  // Radius in meters
+}
+
+// Matches documents within a lat/lon bounding box.
+message GeoBoundingBoxFilter {
+  double top_lat = 1;       // Northern latitude
+  double left_lon = 2;      // Western longitude
+  double bottom_lat = 3;    // Southern latitude
+  double right_lon = 4;     // Eastern longitude
+}
+
+message TermFilter {
+  string value = 1;
+}
+
+message RangeFilter {
+  string min = 1;      // Inclusive lower bound (empty = unbounded)
+  string max = 2;      // Inclusive upper bound (empty = unbounded)
+  bool min_exclusive = 3;
+  bool max_exclusive = 4;
+}
+
+message SortClause {
+  string field = 1;
+  bool descending = 2;
+  // For geo-distance sort: center point to measure distance from.
+  // Only used when the sort field is GEO_POINT type.
+  GeoSortOrigin geo_origin = 3;
+}
+
+message GeoSortOrigin {
+  double lat = 1;
+  double lon = 2;
+}
+
+message SearchAfterToken {
+  float score = 1;       // Score of the last hit
+  int32 doc_id = 2;      // Lucene internal doc ID of the last hit
+  int64 sort_value = 3;  // Deprecated: use sort_field_values instead
+  repeated string sort_field_values = 4;  // Serialized sort field values for FieldDoc reconstruction
+}
+
+message RecencyDecay {
+  // Half-life in seconds: how quickly the boost decays.
+  // At half_life_seconds ago, boost = 0.5x. At 2x half_life, boost = 0.25x.
+  // Default: 3600 (1 hour). Set 0 to disable.
+  int32 half_life_seconds = 1;
 }
 
 message QueryResponse {
+  int64 total_hits = 1;
+  repeated QueryHit hits = 2;
+  bool total_hits_exact = 3;  // false when total_hits is a lower bound
+  SearchAfterToken next_search_after = 4;  // Token for fetching next page
+}
+
+message QueryHit {
+  float score = 1;
+  string doc_id = 2;      // Key field value
+  string source = 3;      // Original JSON document (if include_source)
 }
 
 message UpdateSchemaRequest {
   string indexSchema = 1;
+  string collection = 2;  // Collection name (empty = "default")
 }
 
 message UpdateSchemaResponse {
+}
+
+message DeleteByQueryRequest {
+  // Filters defining which documents to delete (AND semantics)
+  repeated FilterClause filters = 1;
+  // Tenant ID scope (optional — when set, only deletes within this tenant)
+  string tenant_id = 2;
+  // Collection name (empty = "default")
+  string collection = 3;
+}
+
+message DeleteByQueryResponse {
+  // -1 indicates count is unknown (Lucene does not provide synchronous delete count).
+  // Callers needing exact counts should query before and after deletion.
+  int64 deleted_count = 1;
+}
+
+// ---- Collection Lifecycle ----
+
+message CreateCollectionRequest {
+  string collection = 1;     // Collection name (required, alphanumeric + hyphens/underscores)
+  string indexSchema = 2;    // JSON schema for this collection (required)
+}
+
+message CreateCollectionResponse {
+}
+
+message CloseCollectionRequest {
+  string collection = 1;     // Collection to close (releases resources but preserves data)
+}
+
+message CloseCollectionResponse {
+}
+
+message OpenCollectionRequest {
+  string collection = 1;     // Collection to reopen
+  string indexSchema = 2;    // Schema (optional — if empty, reads persisted schema from index)
+}
+
+message OpenCollectionResponse {
+}
+
+message ListCollectionsRequest {
+}
+
+message ListCollectionsResponse {
+  repeated string collections = 1;
+}
+
+message HealthRequest {
+}
+
+message HealthResponse {
+  enum Status {
+    SERVING = 0;
+    NOT_SERVING = 1;
+  }
+  Status status = 1;
+  repeated CollectionHealth collections = 2;
+}
+
+message CollectionHealth {
+  string name = 1;
+  bool writer_open = 2;
+  bool searcher_available = 3;
+  int64 doc_count = 4;          // Number of live documents
+  int32 segment_count = 5;      // Number of Lucene segments
+}
+
+message ForceMergeRequest {
+  string collection = 1;       // Collection to optimize
+  int32 max_segments = 2;      // Target number of segments (default: 1 if 0)
+}
+
+message ForceMergeResponse {
+  int32 segments_before = 1;
+  int32 segments_after = 2;
+}
+
+// Count API: returns number of documents matching filters.
+// Uses IndexSearcher.count() — no scoring, no doc retrieval, very fast.
+message CountRequest {
+  repeated FilterClause filters = 1;
+  string tenant_id = 2;
+  string collection = 3;
+}
+
+message CountResponse {
+  int64 count = 1;
 }

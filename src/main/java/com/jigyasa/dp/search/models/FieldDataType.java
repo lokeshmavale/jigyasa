@@ -2,7 +2,6 @@ package com.jigyasa.dp.search.models;
 
 import com.jigyasa.dp.search.models.mappers.*;
 import com.google.gson.annotations.SerializedName;
-import com.jigyasa.dp.search.models.mappers.*;
 
 import java.util.function.Supplier;
 

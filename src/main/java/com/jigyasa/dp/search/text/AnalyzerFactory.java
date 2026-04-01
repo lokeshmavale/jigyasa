@@ -14,8 +14,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
-public class AnalyzerFactory {
+public final class AnalyzerFactory {
     private static final Map<String, Supplier<Analyzer>> DEFAULT_ANALYZER_SUPPLIER = getDefaultAnalyzers();
+
+    private AnalyzerFactory() {}
 
     private static Map<String, Supplier<Analyzer>> getDefaultAnalyzers() {
         Map<String, Supplier<Analyzer>> result = new HashMap<>();

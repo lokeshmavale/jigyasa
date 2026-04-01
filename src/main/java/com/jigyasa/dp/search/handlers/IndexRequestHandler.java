@@ -1,5 +1,6 @@
 package com.jigyasa.dp.search.handlers;
 
+import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.IndexSchema;
 import com.jigyasa.dp.search.models.InitializedIndexSchema;
@@ -9,6 +10,7 @@ import com.jigyasa.dp.search.protocol.IndexRequest;
 import com.jigyasa.dp.search.protocol.IndexResponse;
 import com.jigyasa.dp.search.services.RequestHandlerBase;
 import com.jigyasa.dp.search.utils.DocIdOverlapLock;
+import com.jigyasa.dp.search.utils.SystemFields;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,31 +32,31 @@ import java.util.stream.Collectors;
 public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexResponse> {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final DocIdOverlapLock lock;
-    private final HandlerHelpers handlerHelpers;
+    private final CollectionRegistry registry;
 
-    public IndexRequestHandler(DocIdOverlapLock lock, HandlerHelpers handlerHelpers) {
+    public IndexRequestHandler(DocIdOverlapLock lock, CollectionRegistry registry) {
         super("Index");
         this.lock = lock;
-        this.handlerHelpers = handlerHelpers;
+        this.registry = registry;
     }
 
     @Override
     public void internalHandle(IndexRequest req, StreamObserver<IndexResponse> observer) {
+        HandlerHelpers handlerHelpers = registry.resolveHelpers(req.getCollection());
 
         IndexWriterManagerISCH indexWriterManager = null;
         try {
-            indexWriterManager = this.handlerHelpers.getIndexWriterManager();
+            indexWriterManager = handlerHelpers.getIndexWriterManager();
             final IndexWriter writer = indexWriterManager.acquireWriter();
-            IndexSchema indexSchema = this.handlerHelpers.getIndexSchemaManager().getIndexSchema();
-            IndexResponse indexResponse = processIndexRequests(req, indexSchema, writer, lock);
-            this.handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
-            observer.onNext(indexResponse);
+            IndexSchema indexSchema = handlerHelpers.getIndexSchemaManager().getIndexSchema();
+            IndexResult result = processIndexRequests(req, indexSchema, writer, lock);
+            handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
+            // NRT: wait for all write operations to become searchable
+            handlerHelpers.getIndexSearcherManager().waitForGeneration(result.maxSeqNo());
+            observer.onNext(result.response());
             observer.onCompleted();
         } catch (Exception e) {
-            //Todo: Add better logging
-            e.printStackTrace();
             observer.onError(e);
-            observer.onCompleted();
         } finally {
 
             if (indexWriterManager != null) {
@@ -63,12 +65,22 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
         }
     }
 
-    public static IndexResponse processIndexRequests(IndexRequest req, IndexSchema indexSchema, IndexWriter indexWriter, DocIdOverlapLock lock) throws InterruptedException, TimeoutException {
+    public record IndexResult(IndexResponse response, long maxSeqNo) {}
+
+    public static IndexResult processIndexRequests(IndexRequest req, IndexSchema indexSchema, IndexWriter indexWriter, DocIdOverlapLock lock) throws InterruptedException, TimeoutException {
         List<IndexRequestContext> requestContexts = getRequestContexts(req);
         Set<String> uniqueDocKeysForRequest = getUniqueDocKeysForRequest(requestContexts, indexSchema.getInitializedSchema());
+
+        // Namespace keys with collection name to prevent cross-collection false contention
+        String collection = com.jigyasa.dp.search.collections.CollectionRegistry
+                .resolveCollectionName(req.getCollection());
+        Set<String> namespacedKeys = uniqueDocKeysForRequest.stream()
+                .map(k -> collection + ":" + k)
+                .collect(Collectors.toSet());
+
         final DocIdOverlapLock.UniqueIdsPerRequest lockToken;
         if (lock != null) {
-            lockToken = lock.lock(uniqueDocKeysForRequest);
+            lockToken = lock.lock(namespacedKeys);
         } else {
             // For the recovery scenario
             lockToken = null;
@@ -76,6 +88,7 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
 
         try {
             IndexResponse.Builder builder = IndexResponse.newBuilder();
+            long maxSeqNo = -1;
             for (IndexRequestContext requestContext : requestContexts) {
                 Status respStatus = null;
                 switch (requestContext.item.getAction()) {
@@ -87,7 +100,9 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
                 }
                 builder.addItemResponse(respStatus);
             }
-            return builder.build();
+            // Capture the max seqNo after all operations complete
+            maxSeqNo = indexWriter.getMaxCompletedSequenceNumber();
+            return new IndexResult(builder.build(), maxSeqNo);
         } finally {
             if (lock != null && lockToken != null) {
                 lock.unlock(lockToken);
@@ -127,6 +142,11 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
                 FieldMapperStrategy strategy = strategyMap.get(fieldName);
                 strategy.addFields(indexSchema, document, fieldName, fieldValue);
             }
+            // Inject system fields only when TTL/memory tiers are enabled in schema
+            if (indexSchema.isTtlEnabled()) {
+                SystemFields.addSystemFields(document, context.item);
+            }
+
             String keyFieldName = initializedSchema.getKeyFieldName();
             String text = context.parsedDocument.get(keyFieldName).asText();
             if (StringUtils.isEmpty(text)) {

@@ -9,7 +9,7 @@ public class SchemaField {
     private String searchAnalyzer;
     private String indexAnalyzer;
     private Integer dimension;
-    private String HNSWConfigName;
+    private String similarityFunction; // COSINE, DOT_PRODUCT, EUCLIDEAN, MAXIMUM_INNER_PRODUCT
 
     //Field Properties
     private boolean key;
