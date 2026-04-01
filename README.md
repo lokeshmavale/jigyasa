@@ -310,10 +310,6 @@ jigyasa/
 - [ ] **Helm chart** — Kubernetes deployment
 - [ ] **Multi-node replication** — horizontal scalability
 
-## Part of Engram
-
-Jigyasa is the search engine core of **[Engram](https://github.com/lokeshmavale/engram)** — a universal agent memory engine that replaces SQLite in LangGraph, AutoGen, and CrewAI with searchable, rankable, semantically queryable memory.
-
 ## License
 
 Apache License 2.0
