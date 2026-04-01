@@ -1,9 +1,14 @@
 .git
 .gradle
-build
+build/classes
+build/generated
+build/reports
+build/tmp
 *.class
-*.jar
 .idea
 *.iml
 IndexData
 TransLog
+test-data
+smoke_test.py
+src
