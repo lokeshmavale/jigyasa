@@ -16,7 +16,9 @@ public abstract class FieldMapperStrategy {
 
     protected static Field getDocValuesField(String fieldName, FieldDataType dataType) {
         return switch (dataType) {
-            case STRING, BOOLEAN, STRING_COLLECTION, BOOLEAN_COLLECTION ->
+            case STRING, BOOLEAN ->
+                    new SortedDocValuesField(fieldName, EMPTY_BREF);
+            case STRING_COLLECTION, BOOLEAN_COLLECTION ->
                     new SortedSetDocValuesField(fieldName, EMPTY_BREF);
             case INT32, INT64, DATE_TIME_OFFSET -> new NumericDocValuesField(fieldName, 0);
             case DOUBLE -> new DoubleDocValuesField(fieldName, 0.0);

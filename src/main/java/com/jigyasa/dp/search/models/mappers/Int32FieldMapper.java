@@ -35,20 +35,20 @@ public class Int32FieldMapper extends FieldMapperStrategy {
     private IndexableField getSortableField(SchemaField schemaField, int val) {
         String fieldName = LuceneFieldType.SORTABLE.toLuceneFieldName(schemaField.getName());
         Field field = fieldMap.computeIfAbsent(fieldName, k -> getDocValuesField(k, schemaField.getType()));
-        field.setIntValue(val);
+        field.setLongValue(val);
         return field;
     }
 
     private IndexableField getFilterableDocField(SchemaField schemaField, int val) {
         String fieldName = LuceneFieldType.FILTERABLE.toLuceneFieldName(schemaField.getName());
         Field docValuesField = getDocValuesField(fieldName, schemaField.getType());
-        docValuesField.setIntValue(val);
+        docValuesField.setLongValue(val);
         return docValuesField;
     }
 
     private IndexableField getFilterableField(SchemaField schemaField, int val) {
         String fieldName = LuceneFieldType.FILTERABLE.toLuceneFieldName(schemaField.getName());
-        Field field = fieldMap.computeIfAbsent(fieldName, IntPoint::new);
+        Field field = fieldMap.computeIfAbsent(fieldName, k -> new IntPoint(k, val));
         field.setIntValue(val);
         return field;
     }

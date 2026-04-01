@@ -7,7 +7,7 @@ import com.jigyasa.dp.search.models.SchemaField;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.document.IntPoint;
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.IndexableField;
 
 import java.util.HashMap;
@@ -48,7 +48,7 @@ public class Int64FieldMapper extends FieldMapperStrategy {
 
     private IndexableField getFilterableField(SchemaField schemaField, long val) {
         String fieldName = LuceneFieldType.FILTERABLE.toLuceneFieldName(schemaField.getName());
-        Field field = fieldMap.computeIfAbsent(fieldName, IntPoint::new);
+        Field field = fieldMap.computeIfAbsent(fieldName, k -> new LongPoint(k, val));
         field.setLongValue(val);
         return field;
     }

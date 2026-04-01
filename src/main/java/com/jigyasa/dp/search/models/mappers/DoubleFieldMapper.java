@@ -49,7 +49,7 @@ public class DoubleFieldMapper extends FieldMapperStrategy {
 
     private IndexableField getStoredField(SchemaField schemaField, double val) {
         String fieldName = LuceneFieldType.FILTERABLE.toLuceneFieldName(schemaField.getName());
-        Field field = fieldMap.computeIfAbsent(fieldName, k -> new DoublePoint(fieldName));
+        Field field = fieldMap.computeIfAbsent(fieldName, k -> new DoublePoint(k, val));
         field.setDoubleValue(val);
         return field;
     }
