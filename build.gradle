@@ -7,6 +7,7 @@ plugins {
     id 'idea'
     id 'jvm-test-suite'
     id 'application'
+    id 'me.champeau.jmh' version '0.7.3'
 }
 
 application {
@@ -117,4 +118,16 @@ publishing {
 
 tasks.withType(Javadoc) {
     options.encoding = 'UTF-8'
+}
+
+jmh {
+    iterations = 5
+    warmupIterations = 3
+    fork = 1
+    threads = 1
+    benchmarkMode = ['thrpt', 'avgt']
+    timeUnit = 'ms'
+    resultFormat = 'TEXT'
+    failOnError = true
+    jvmArgs = ['--add-modules', 'jdk.incubator.vector']
 }

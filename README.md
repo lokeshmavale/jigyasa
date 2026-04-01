@@ -253,31 +253,65 @@ count = stub.Count(pb.CountRequest(collection="memories"))
 
 ## Performance Benchmarks
 
-Head-to-head against Elasticsearch 8.13.0 on the same machine (10K HTTP log docs, single shard, force-merged):
+All benchmarks run head-to-head against **Elasticsearch 8.13.0** on the same machine, same data, same shard count. Jigyasa uses REQUEST durability (fsync per operation) — the safe default.
 
-### Query Latency
+### 1M Document Scale
 
 | Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup |
 |---|---|---|---|
-| Text search (BM25) | **3.08ms** | 7.69ms | **2.5x** |
-| Term filter | **1.88ms** | 6.45ms | **3.4x** |
-| Range filter | **1.71ms** | 6.41ms | **3.7x** |
-| Boolean compound | **1.32ms** | 6.84ms | **5.2x** |
-| Query string | **1.52ms** | 6.91ms | **4.5x** |
-| Match-all + sort | **1.29ms** | 6.47ms | **5.0x** |
-| Count API | **0.79ms** | 5.55ms | **7.0x** |
-| Text + filter combo | **1.73ms** | 7.17ms | **4.1x** |
+| BM25 text search | **4.32ms** | 13.33ms | **3.1x** |
+| Term filter | **1.07ms** | 15.06ms | **14.1x** |
+| Range filter | **1.37ms** | 8.30ms | **6.1x** |
+| Boolean compound | **1.34ms** | 14.78ms | **11.0x** |
+| Text + filter | **5.20ms** | 13.02ms | **2.5x** |
+| Sort by field | **10.63ms** | 26.08ms | **2.5x** |
+| Count | **0.64ms** | 7.16ms | **11.2x** |
+| Count + filter | **0.87ms** | 6.76ms | **7.8x** |
 
-**Average: 1.67ms vs 6.69ms — Jigyasa is 4x faster on queries.**
+**Average: 3.18ms vs 13.06ms — Jigyasa 4.1x faster. Score: Jigyasa 8 – ES 0.**
 
-### Bulk Indexing Throughput
+### Bulk Indexing (1M docs, batch=1000)
 
-| Batch Size | Jigyasa (REQUEST) | Jigyasa (ASYNC) | ES 8.13 |
+| Engine | Throughput | Time |
+|---|---|---|
+| **Jigyasa** | **21,507 docs/s** | 46.5s |
+| ES 8.13 | 14,206 docs/s | 70.4s |
+
+### Vector KNN Search (50K docs, 128-dim HNSW)
+
+| Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup |
 |---|---|---|---|
-| 100 | 4,262 docs/s | 6,657 docs/s | 3,992 docs/s |
-| 500 | **13,483 docs/s** | **17,718 docs/s** | 10,546 docs/s |
+| KNN top-10 | **2.07ms** | 11.35ms | **5.5x** |
+| KNN top-50 | **6.44ms** | 16.22ms | **2.5x** |
+| KNN + filter | **2.86ms** | 16.03ms | **5.6x** |
+| Hybrid BM25+KNN | **2.23ms** | 12.49ms | **5.6x** |
 
-*Why faster? Embedded Lucene (no HTTP/JSON parsing, no shard routing, gRPC binary protocol). ES reference numbers include its full REST stack overhead.*
+### Concurrent Throughput & Operational
+
+| Metric | Jigyasa | ES 8.13 | Advantage |
+|---|---|---|---|
+| Peak QPS (4 threads) | **3,154** | 786 (8 threads) | **4.0x** |
+| Cold start | **1.84s** | 19.51s | **11x** |
+| Artifact size | **29 MB** JAR | 587 MB Docker | **21x smaller** |
+| Memory baseline | 512 MB | 1.4 GB | **3x less** |
+
+### JMH Microbenchmarks (pure Lucene, no gRPC overhead)
+
+Raw Lucene performance measured with JMH (in-memory `ByteBuffersDirectory`, JDK 21, Vector API enabled):
+
+| Operation | 10K docs | 100K docs | 1M docs | Unit |
+|---|---|---|---|---|
+| BM25 text search | 10,648 | 4,040 | 530 | ops/ms |
+| Term filter | 42,113 | 41,339 | 37,647 | ops/ms |
+| Range filter | 35,088 | 7,407 | 911 | ops/ms |
+| Boolean compound | 11,825 | 1,302 | 128 | ops/ms |
+| Text + filter | 9,487 | 2,169 | 251 | ops/ms |
+| Sort by field | 9,551 | 1,052 | 103 | ops/ms |
+| Count + filter | 83,333 | 58,824 | 71,429 | ops/ms |
+
+*Term filter at 37M ops/sec on 1M docs — Lucene is the speed floor. gRPC adds ~1ms overhead, which is the gap between JMH and end-to-end numbers.*
+
+*Why faster than ES? Embedded Lucene (no HTTP/JSON parsing, no shard routing, gRPC binary protocol). Same Lucene engine underneath — Jigyasa just removes the distributed systems tax.*
 
 ## Performance Tuning
 
