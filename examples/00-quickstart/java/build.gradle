@@ -1,0 +1,39 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.google.protobuf' version '0.9.6'
+}
+
+application {
+    mainClass = 'quickstart.Quickstart'
+}
+
+def grpcVer = '1.80.0'
+def protoVer = '4.34.1'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "io.grpc:grpc-protobuf:${grpcVer}"
+    implementation "io.grpc:grpc-netty:${grpcVer}"
+    implementation "io.grpc:grpc-stub:${grpcVer}"
+    implementation "com.google.protobuf:protobuf-java:${protoVer}"
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.18.2"
+    implementation 'javax.annotation:javax.annotation-api:1.3.2'
+}
+
+protobuf {
+    protoc { artifact = "com.google.protobuf:protoc:${protoVer}" }
+    plugins { grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVer}" } }
+    generateProtoTasks { all()*.plugins { grpc {} } }
+}
+
+sourceSets {
+    main {
+        proto {
+            srcDir "${rootProject.projectDir}/src/main/proto"
+        }
+    }
+}

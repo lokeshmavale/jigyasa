@@ -17,6 +17,78 @@ All configuration via environment variables:
 | `MERGE_MAX_THREADS` | `2` | Concurrent merge threads |
 | `MERGE_MAX_MERGE_COUNT` | `4` | Max concurrent merges |
 
+## Data Storage
+
+Jigyasa persists two categories of data to disk. Both paths are configurable via environment variables.
+
+### Directory Layout
+
+```
+/data/                          ← root (mount a volume here)
+├── index/                      ← INDEX_CACHE_DIR
+│   ├── memories/               ← one subdirectory per collection
+│   │   ├── segments_N          ← Lucene commit point
+│   │   ├── _0.cfs / _0.si     ← segment files (inverted index, vectors, stored fields)
+│   │   └── ...
+│   └── logs/
+│       └── ...
+└── translog/                   ← TRANSLOG_DIRECTORY
+    ├── memories/               ← one subdirectory per collection
+    │   ├── translog.log        ← active write-ahead log
+    │   └── ...
+    └── ...
+```
+
+### What Goes Where
+
+| Data | Location | Purpose |
+|---|---|---|
+| **Lucene segments** | `INDEX_CACHE_DIR/<collection>/` | Inverted index, HNSW vector graph, stored `_source` fields, doc values for sort/filter. This is your searchable data. |
+| **Translog (WAL)** | `TRANSLOG_DIRECTORY/<collection>/` | Write-ahead log. Every index/update/delete is appended here *before* Lucene commit. Used for crash recovery. |
+| **Schema** | Lucene commit user data | Schema is stored as metadata in the Lucene commit point — no separate schema file. Survives restarts automatically. |
+
+### Configuring Custom Paths
+
+```bash
+# Store index on fast SSD, translog on durable storage
+export INDEX_CACHE_DIR=/mnt/ssd/jigyasa/index
+export TRANSLOG_DIRECTORY=/mnt/persistent/jigyasa/translog
+java -jar Jigyasa-1.0-SNAPSHOT-all.jar
+```
+
+Docker — mount a volume:
+
+```bash
+docker run -d --name jigyasa \
+  -p 50051:50051 \
+  -v /host/path/data:/data \
+  jigyasa:v0.1
+```
+
+Docker Compose (already configured in `docker-compose.yml`):
+
+```yaml
+volumes:
+  - jigyasa-data:/data    # both index and translog live under /data
+```
+
+### Durability Modes
+
+| Mode | Env Value | Behavior | Trade-off |
+|---|---|---|---|
+| **Request** (default) | `TRANSLOG_DURABILITY=request` | fsync after every operation | Zero data loss, slightly higher write latency |
+| **Async** | `TRANSLOG_DURABILITY=async` | fsync every `TRANSLOG_FLUSH_INTERVAL_MS` ms | Higher throughput, up to N ms of data at risk on crash |
+
+### Backup & Restore
+
+Since all data is file-based:
+
+1. **Stop** Jigyasa (or pause writes)
+2. **Copy** `INDEX_CACHE_DIR` and `TRANSLOG_DIRECTORY` to your backup location
+3. **Restore** by copying them back and starting Jigyasa
+
+For zero-downtime snapshots, use filesystem-level snapshots (ZFS, LVM, EBS snapshots) on the volume.
+
 ## Schema Design
 
 ```json

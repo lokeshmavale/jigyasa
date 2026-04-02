@@ -41,9 +41,12 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 ## Quick Start
 
 ```bash
-# Fat JAR
+# Start the server
+./gradlew run                                          # → localhost:50051
+
+# Or build a fat JAR
 ./gradlew shadowJar
-java -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar   # → localhost:50051
+java -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar      # → localhost:50051
 
 # Docker
 docker compose up -d
@@ -69,18 +72,24 @@ stub.Index(pb.IndexRequest(collection="memories",
 resp = stub.Query(pb.QueryRequest(collection="memories", text_query="dark mode", include_source=True, top_k=10))
 ```
 
-## Build & Test
+## Build, Test & Run Examples
 
 ```bash
-./gradlew build        # compile + test
-./gradlew test         # 191 tests
-python smoke_test.py   # e2e against running server
+./gradlew build                                        # compile + test
+./gradlew test                                         # 191 tests
+python smoke_test.py                                   # e2e against running server
+
+# Run any Java example (server must be running)
+./gradlew :examples:00-quickstart:run
+./gradlew :examples:07-multi-language-analyzers:run
+# See examples/README.md for the full list
 ```
 
 ## Docs
 
 | | |
 |---|---|
+| [Examples](examples/) | 8 hands-on examples from quickstart to multi-language analyzers (Java + Python) |
 | [Architecture](docs/ARCHITECTURE.md) | Component overview, query pipeline, storage layer |
 | [Reference](docs/REFERENCE.md) | Configuration, schema design, field types, full benchmarks, tuning |
 | [Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md) | How to wire Jigyasa into LLM agent frameworks |

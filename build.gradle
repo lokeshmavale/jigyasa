@@ -38,6 +38,8 @@ dependencies {
     // --- Lucene 10.4 ---
     implementation "org.apache.lucene:lucene-core:${luceneVer}"
     implementation "org.apache.lucene:lucene-analysis-common:${luceneVer}"
+    implementation "org.apache.lucene:lucene-analysis-stempel:${luceneVer}"       // Polish
+    implementation "org.apache.lucene:lucene-analysis-morfologik:${luceneVer}"    // Ukrainian
     implementation "org.apache.lucene:lucene-queryparser:${luceneVer}"
     implementation "org.apache.lucene:lucene-queries:${luceneVer}"
     implementation "org.apache.lucene:lucene-highlighter:${luceneVer}"

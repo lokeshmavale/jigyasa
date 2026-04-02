@@ -3,3 +3,9 @@
  */
 
 rootProject.name = 'Jigyasa'
+
+// Example subprojects — run with: ./gradlew :examples:00-quickstart:run
+file("examples").listFiles()?.findAll { it.isDirectory() && new File(it, "java/build.gradle").exists() }?.each {
+    include "examples:${it.name}"
+    project(":examples:${it.name}").projectDir = new File(it, "java")
+}
