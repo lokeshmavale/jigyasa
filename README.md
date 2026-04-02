@@ -2,7 +2,7 @@
 
 # Jigyasa
 
-**Lightweight Elasticsearch alternative — full-text, vector, and hybrid search in a 29 MB JAR**
+**Lightweight Elasticsearch alternative — full-text, vector, and hybrid search in a single JAR**
 
 [![Java 21](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Lucene 10.4](https://img.shields.io/badge/Lucene-10.4-orange)](https://lucene.apache.org/)
@@ -11,7 +11,11 @@
 
 </div>
 
-Elasticsearch is powerful but heavy — 587 MB, 20s cold start, GBs of RAM for basic search. Jigyasa runs the **same Lucene engine** without the distributed-systems tax: BM25, HNSW KNN, hybrid RRF, geo filters, and translog in a single embeddable JAR. Deploy it where a full ES cluster is overkill — edge services, embedded search, microservices, or as the search backbone for LLM agent memory.
+Elasticsearch is powerful but heavy — 587 MB, 20s cold start, GBs of RAM for basic search. Jigyasa runs the **same Lucene engine** without the distributed-systems tax: BM25, HNSW KNN, hybrid RRF, geo filters, and translog in a single embeddable JAR.
+
+**Most search workloads don't need a cluster.** They need fast, correct search on a single node — and they need it without a week of infra setup. If your data fits on one machine, Jigyasa gives you Elasticsearch-grade search at a fraction of the cost, complexity, and latency. No shards to tune. No coordinating nodes. No YAML maze. Just `java -jar` and you're searching.
+
+Deploy it in edge services, embedded search, microservices, CI pipelines, or as the search backbone for LLM agent memory.
 
 ## Highlights
 
@@ -30,7 +34,7 @@ Elasticsearch is powerful but heavy — 587 MB, 20s cold start, GBs of RAM for b
 | KNN top-10 | **2.07ms** | 11.35ms |
 | Bulk indexing | **21.5K docs/s** | 14.2K docs/s |
 | Cold start | **1.8s** | 19.5s |
-| Artifact size | **29 MB** | 587 MB |
+| Artifact size | **Single JAR** | 587 MB Docker |
 
 > Full benchmark tables → [docs/REFERENCE.md](docs/REFERENCE.md#full-benchmark-results) · Reproduce it yourself → [benchmarks/](benchmarks/)
 
