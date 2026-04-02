@@ -174,10 +174,10 @@ public class QueryCookbook {
     }
 
     private static void queryString(JigyasaDataPlaneServiceGrpc.JigyasaDataPlaneServiceBlockingStub stub) {
-        banner("5. Query String — \"description:organic AND category:food\"");
+        banner("5. Query String — \"description:organic AND description:natural\"");
         printHits(stub.query(QueryRequest.newBuilder()
                 .setCollection(COLLECTION)
-                .setQueryString("description:organic AND category:food")
+                .setQueryString("description:organic AND description:natural")
                 .setTopK(5)
                 .setIncludeSource(true)
                 .build()));

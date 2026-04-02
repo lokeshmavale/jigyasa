@@ -42,3 +42,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Jigyasa runtime data ###
+IndexData/
+TransLog/
+_gen/

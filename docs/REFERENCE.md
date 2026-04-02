@@ -118,6 +118,27 @@ For zero-downtime snapshots, use filesystem-level snapshots (ZFS, LVM, EBS snaps
 | `VECTOR` | ✅ KNN | ❌ | ❌ | HNSW with optional scalar quantization |
 | `GEO_POINT` | ❌ | ✅ distance/bbox | ✅ distance | Lat/lon coordinates |
 
+### Analyzers
+
+Jigyasa supports **42 built-in analyzers** — 4 generic plus 38 language-specific from [Apache Lucene's analysis modules](https://lucene.apache.org/core/10_1_0/analysis/common/index.html). Set per-field via `indexAnalyzer` and `searchAnalyzer` in the schema:
+
+```json
+{"name": "title_fr", "type": "STRING", "searchable": true,
+ "indexAnalyzer": "lucene.fr", "searchAnalyzer": "lucene.fr"}
+```
+
+| Analyzer | Description |
+|----------|-------------|
+| `standard` (default) | Unicode tokenization + lowercase |
+| `simple` | Letter tokenizer + lowercase |
+| `keyword` | No tokenization — exact match only |
+| `whitespace` | Split on whitespace, no lowercasing |
+| `lucene.{lang}` | Language-specific stemming, stop words, normalization |
+
+**Language codes:** `ar` `hy` `eu` `bn` `br` `bg` `ca` `cjk` `cs` `da` `nl` `en` `et` `fi` `fr` `gl` `de` `el` `hi` `hu` `id` `ga` `it` `lv` `lt` `no` `fa` `pl` `pt` `ro` `ru` `sr` `ckb` `es` `sv` `th` `tr` `uk`
+
+For detailed analyzer behavior, see the [Lucene Analysis documentation](https://lucene.apache.org/core/10_1_0/analysis/common/index.html). For a working example, see [Example 07 — Multi-Language Analyzers](../examples/07-multi-language-analyzers/).
+
 ## API Reference
 
 gRPC API defined in [`dpSearch.proto`](../src/main/proto/dpSearch.proto).
