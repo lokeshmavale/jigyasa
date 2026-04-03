@@ -19,13 +19,17 @@ public class PerFieldAnalyzer extends DelegatingAnalyzerWrapper {
 
     @Override
     public Analyzer getWrappedAnalyzer(String fieldName) {
-        return perFieldAnalyzerMap.get(fieldName);
+        Analyzer analyzer = perFieldAnalyzerMap.get(fieldName);
+        if (analyzer == null) {
+            return new org.apache.lucene.analysis.standard.StandardAnalyzer();
+        }
+        return analyzer;
     }
 
     @Override
     public int getPositionIncrementGap(String fieldName) {
         SchemaField schemaField = this.schemaFieldMap.get(fieldName);
-        if (schemaField.getType() == FieldDataType.STRING_COLLECTION) {
+        if (schemaField != null && schemaField.getType() == FieldDataType.STRING_COLLECTION) {
             return 100;
         }
         return super.getPositionIncrementGap(fieldName);

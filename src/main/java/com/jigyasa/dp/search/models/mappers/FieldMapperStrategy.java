@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 
 public abstract class FieldMapperStrategy {
     private static final BytesRef EMPTY_BREF = new BytesRef();
-    public static final String SOURCE_FEILD_NAME = "_src";
+    public static final String SOURCE_FIELD_NAME = "_src";
 
     public abstract void addFields(IndexSchema schema, Document doc, String fieldName, JsonNode value);
 
@@ -30,6 +30,6 @@ public abstract class FieldMapperStrategy {
     }
 
     public static void addSourceField(Document luceneDoc, String document) {
-        luceneDoc.add(new StoredField(SOURCE_FEILD_NAME, document.getBytes(StandardCharsets.UTF_8)));
+        luceneDoc.add(new StoredField(SOURCE_FIELD_NAME, document.getBytes(StandardCharsets.UTF_8)));
     }
 }

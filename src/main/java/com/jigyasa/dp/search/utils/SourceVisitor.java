@@ -16,6 +16,6 @@ public class SourceVisitor extends StoredFieldVisitor {
 
     @Override
     public Status needsField(FieldInfo fieldInfo) {
-        return FieldMapperStrategy.SOURCE_FEILD_NAME.equals(fieldInfo.name) ? Status.YES : Status.NO;
+        return FieldMapperStrategy.SOURCE_FIELD_NAME.equals(fieldInfo.name) ? Status.YES : Status.NO;
     }
 }

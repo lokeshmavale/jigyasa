@@ -56,8 +56,6 @@ public class GrpcServerWrapper {
                 server.shutdownNow();
                 server.awaitTermination(5, TimeUnit.SECONDS);
             }
-            registry.shutdownAll();
-            log.info("Server shut down gracefully");
         } catch (InterruptedException e) {
             log.warn("Shutdown interrupted, forcing immediate shutdown");
             server.shutdownNow();
@@ -65,6 +63,14 @@ public class GrpcServerWrapper {
         } catch (Exception e) {
             log.error("Error during shutdown", e);
             server.shutdownNow();
+        } finally {
+            // Always close collections even if server shutdown fails/is interrupted
+            try {
+                registry.shutdownAll();
+            } catch (Exception e) {
+                log.error("Error shutting down collection registry", e);
+            }
         }
+        log.info("Server shut down gracefully");
     }
 }

@@ -51,15 +51,19 @@ public class QueryExecutor {
      */
     private Object deserializeSortValue(String value, SortField.Type type) {
         if (value.isEmpty()) return null;
-        return switch (type) {
-            case INT -> Integer.parseInt(value);
-            case LONG -> Long.parseLong(value);
-            case DOUBLE -> Double.parseDouble(value);
-            case FLOAT, SCORE -> Float.parseFloat(value);
-            case STRING -> new BytesRef(
-                    value.getBytes(StandardCharsets.UTF_8));
-            default -> value;
-        };
+        try {
+            return switch (type) {
+                case INT -> Integer.parseInt(value);
+                case LONG -> Long.parseLong(value);
+                case DOUBLE -> Double.parseDouble(value);
+                case FLOAT, SCORE -> Float.parseFloat(value);
+                case STRING -> new BytesRef(
+                        value.getBytes(StandardCharsets.UTF_8));
+                default -> value;
+            };
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid search_after token value '" + value + "' for sort type " + type, e);
+        }
     }
 
     private boolean hasValidToken(SearchAfterToken token) {

@@ -1,6 +1,7 @@
 package com.jigyasa.dp.search.collections;
 
 import com.jigyasa.dp.search.handlers.*;
+import com.jigyasa.dp.search.handlers.translog.FileAppender;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.IndexSchemaManager;
 import com.jigyasa.dp.search.models.ServerMode;
@@ -93,6 +94,14 @@ public class CollectionContext {
         }
         try { commitService.shutdown(); } catch (Exception e) {
             log.error("Error shutting down commit service for collection '{}'", name, e);
+        }
+        try {
+            TranslogAppenderManager tam = helpers.getTranslogAppenderManager();
+            if (tam.getAppender() instanceof FileAppender fa) {
+                fa.shutdown();
+            }
+        } catch (Exception e) {
+            log.error("Error shutting down translog appender for collection '{}'", name, e);
         }
         try { searcherManager.shutdown(); } catch (Exception e) {
             log.error("Error shutting down searcher manager for collection '{}'", name, e);

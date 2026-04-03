@@ -20,6 +20,9 @@ public class GeoPointFieldMapper extends FieldMapperStrategy {
 
     public void addFields(IndexSchema schema, Document doc, String fieldName, JsonNode value) {
         SchemaField schemaField = schema.getInitializedSchema().getFieldLookupMap().get(fieldName);
+        if (value == null || !value.has("lat") || !value.has("lon")) {
+            throw new IllegalArgumentException("GEO_POINT field '" + fieldName + "' requires object with 'lat' and 'lon' keys");
+        }
         double lat = value.get("lat").asDouble();
         double lon = value.get("lon").asDouble();
 

@@ -31,7 +31,7 @@ COLLECTION = "benchmark"
 
 # --- Generate Python stubs ---
 def generate_stubs():
-    proto_path = os.path.join(os.path.dirname(__file__), "src", "main", "proto")
+    proto_path = os.path.join(os.path.dirname(__file__), "..", "src", "main", "proto")
     out_path = os.path.join(os.path.dirname(__file__), "test-data", "gen")
     os.makedirs(out_path, exist_ok=True)
     

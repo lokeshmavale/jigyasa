@@ -53,8 +53,13 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             indexWriterManager = handlerHelpers.getIndexWriterManager();
             final IndexWriter writer = indexWriterManager.acquireWriter();
             IndexSchema indexSchema = handlerHelpers.getIndexSchemaManager().getIndexSchema();
-            IndexResult result = processIndexRequests(req, indexSchema, writer, lock);
+            // Pre-validate request before WAL write to avoid poison translog entries
+            // (parsing + key field presence). This ensures only replayable entries are persisted.
+            List<IndexRequestContext> contexts = getRequestContexts(req);
+            getUniqueDocKeysForRequest(contexts, indexSchema.getInitializedSchema());
+            // WAL: write translog BEFORE indexing for crash-safe recovery
             handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
+            IndexResult result = processIndexRequests(req, indexSchema, writer, lock, contexts);
             // NRT refresh based on client's requested policy
             RefreshPolicy refresh = req.getRefresh();
             if (refresh == RefreshPolicy.NONE) {
@@ -82,7 +87,10 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
     public record IndexResult(IndexResponse response, long maxSeqNo) {}
 
     public static IndexResult processIndexRequests(IndexRequest req, IndexSchema indexSchema, IndexWriter indexWriter, DocIdOverlapLock lock) throws InterruptedException, TimeoutException {
-        List<IndexRequestContext> requestContexts = getRequestContexts(req);
+        return processIndexRequests(req, indexSchema, indexWriter, lock, getRequestContexts(req));
+    }
+
+    public static IndexResult processIndexRequests(IndexRequest req, IndexSchema indexSchema, IndexWriter indexWriter, DocIdOverlapLock lock, List<IndexRequestContext> requestContexts) throws InterruptedException, TimeoutException {
         Set<String> uniqueDocKeysForRequest = getUniqueDocKeysForRequest(requestContexts, indexSchema.getInitializedSchema());
 
         // Namespace keys with collection name to prevent cross-collection false contention
@@ -138,7 +146,7 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
         } catch (IllegalArgumentException e) {
             return Status.newBuilder().setCode(Code.INVALID_ARGUMENT.getNumber()).setMessage(e.getMessage()).build();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to update document", e);
+            throw new RuntimeException("Failed to delete document", e);
         }
     }
 

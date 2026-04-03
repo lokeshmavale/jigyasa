@@ -16,7 +16,7 @@ public class IndexSchemaManager {
 
     private final List<IndexSchemaChangeHandler> beforeHandlers = new ArrayList<>();
 
-    public void updateIndexSchema(final IndexSchema indexSchema) {
+    public synchronized void updateIndexSchema(final IndexSchema indexSchema) {
         for (IndexSchemaChangeHandler indexSchemaChangeObservers : beforeHandlers) {
             indexSchemaChangeObservers.handle(indexSchema, this.indexSchema);
         }

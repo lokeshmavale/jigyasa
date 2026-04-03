@@ -25,8 +25,8 @@ public final class FileUtils {
 
         if (sort) {
             paths.sort((o1, o2) -> {
-                int o1Num = Integer.parseInt(StringUtils.substringAfterLast(".", o1.toString()));
-                int o2Num = Integer.parseInt(StringUtils.substringAfterLast(".", o2.toString()));
+                int o1Num = Integer.parseInt(StringUtils.substringAfterLast(o1.getFileName().toString(), "."));
+                int o2Num = Integer.parseInt(StringUtils.substringAfterLast(o2.getFileName().toString(), "."));
                 return Integer.compare(o1Num, o2Num);
             });
         }

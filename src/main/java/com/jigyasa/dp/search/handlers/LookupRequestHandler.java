@@ -31,7 +31,7 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
 
             @Override
             public Status needsField(FieldInfo fieldInfo) {
-                return FieldMapperStrategy.SOURCE_FEILD_NAME.equals(fieldInfo.name) ? Status.YES : Status.NO;
+                return FieldMapperStrategy.SOURCE_FIELD_NAME.equals(fieldInfo.name) ? Status.YES : Status.NO;
             }
         };
     }
@@ -72,7 +72,7 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
             observer.onNext(response.build());
             observer.onCompleted();
         } catch (Exception e) {
-            observer.onError(e);
+            observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
         } finally {
             if (indexSearcher != null) {
                 try {

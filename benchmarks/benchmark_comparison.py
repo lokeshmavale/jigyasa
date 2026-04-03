@@ -133,7 +133,7 @@ def es_count(body=None):
 
 # ---- Jigyasa gRPC setup ----
 def setup_jigyasa_stubs():
-    proto_path = os.path.join(os.path.dirname(__file__), "src", "main", "proto")
+    proto_path = os.path.join(os.path.dirname(__file__), "..", "src", "main", "proto")
     out_path = os.path.join(os.path.dirname(__file__), "test-data", "gen")
     os.makedirs(out_path, exist_ok=True)
     import grpc_tools

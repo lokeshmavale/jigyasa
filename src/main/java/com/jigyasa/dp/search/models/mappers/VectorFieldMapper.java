@@ -27,6 +27,10 @@ public class VectorFieldMapper extends FieldMapperStrategy {
         float[] vals = new float[value.size()];
         for (int i = 0; i < value.size(); i++) {
             vals[i] = (float) value.get(i).asDouble();
+            if (Float.isNaN(vals[i]) || Float.isInfinite(vals[i])) {
+                throw new IllegalArgumentException("Vector field '" + fieldName
+                        + "' contains invalid value at index " + i + ": " + vals[i]);
+            }
         }
 
         VectorSimilarityFunction similarity = resolveSimilarity(schemaField.getSimilarityFunction());

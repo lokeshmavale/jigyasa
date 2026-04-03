@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 public class TranslogAppenderManager implements IndexSchemaChangeHandler {
 
     @Getter
-    private TranslogAppender appender;
+    private volatile TranslogAppender appender;
     final private String translogInitParam;
 
     @Override

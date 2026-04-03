@@ -176,9 +176,9 @@ public class CollectionRegistry {
     /**
      * Shutdown all collections. Called during server shutdown.
      */
-    public void shutdownAll() {
+    public synchronized void shutdownAll() {
         log.info("Shutting down all collections: {}", collections.keySet());
-        for (CollectionContext ctx : collections.values()) {
+        for (CollectionContext ctx : new java.util.ArrayList<>(collections.values())) {
             ctx.shutdown();
         }
         collections.clear();

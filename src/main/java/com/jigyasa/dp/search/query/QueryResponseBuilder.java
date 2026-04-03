@@ -56,7 +56,7 @@ public class QueryResponseBuilder {
         Set<String> projectedFields = hasProjection ? Set.copyOf(sourceFields) : null;
 
         String keyFieldName = schema.getKeyFieldName();
-        int end = Math.min(offset + topK, topDocs.scoreDocs.length);
+        int end = (int) Math.min((long) offset + topK, topDocs.scoreDocs.length);
         int filteredCount = 0;
 
         for (int i = offset; i < end; i++) {

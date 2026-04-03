@@ -152,21 +152,33 @@ public final class FilterQueryBuilder {
     private static Query buildRangeFilterQuery(String fieldName, RangeFilter rf, FieldDataType type) {
         return switch (type) {
             case INT32, INT32_COLLECTION -> {
-                int min = rf.getMin().isEmpty() ? Integer.MIN_VALUE : Integer.parseInt(rf.getMin()) + (rf.getMinExclusive() ? 1 : 0);
-                int max = rf.getMax().isEmpty() ? Integer.MAX_VALUE : Integer.parseInt(rf.getMax()) - (rf.getMaxExclusive() ? 1 : 0);
-                yield IntPoint.newRangeQuery(fieldName, min, max);
+                try {
+                    int min = rf.getMin().isEmpty() ? Integer.MIN_VALUE : Integer.parseInt(rf.getMin()) + (rf.getMinExclusive() ? 1 : 0);
+                    int max = rf.getMax().isEmpty() ? Integer.MAX_VALUE : Integer.parseInt(rf.getMax()) - (rf.getMaxExclusive() ? 1 : 0);
+                    yield IntPoint.newRangeQuery(fieldName, min, max);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Invalid numeric value in range filter for field '" + fieldName + "': " + e.getMessage());
+                }
             }
             case INT64, DATE_TIME_OFFSET, INT64_COLLECTION, DATE_TIME_OFFSET_COLLECTION -> {
-                long min = rf.getMin().isEmpty() ? Long.MIN_VALUE : Long.parseLong(rf.getMin()) + (rf.getMinExclusive() ? 1 : 0);
-                long max = rf.getMax().isEmpty() ? Long.MAX_VALUE : Long.parseLong(rf.getMax()) - (rf.getMaxExclusive() ? 1 : 0);
-                yield LongPoint.newRangeQuery(fieldName, min, max);
+                try {
+                    long min = rf.getMin().isEmpty() ? Long.MIN_VALUE : Long.parseLong(rf.getMin()) + (rf.getMinExclusive() ? 1 : 0);
+                    long max = rf.getMax().isEmpty() ? Long.MAX_VALUE : Long.parseLong(rf.getMax()) - (rf.getMaxExclusive() ? 1 : 0);
+                    yield LongPoint.newRangeQuery(fieldName, min, max);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Invalid numeric value in range filter for field '" + fieldName + "': " + e.getMessage());
+                }
             }
             case DOUBLE, DOUBLE_COLLECTION -> {
-                double min = rf.getMin().isEmpty() ? Double.NEGATIVE_INFINITY : Double.parseDouble(rf.getMin());
-                double max = rf.getMax().isEmpty() ? Double.POSITIVE_INFINITY : Double.parseDouble(rf.getMax());
-                if (rf.getMinExclusive()) min = Math.nextUp(min);
-                if (rf.getMaxExclusive()) max = Math.nextDown(max);
-                yield DoublePoint.newRangeQuery(fieldName, min, max);
+                try {
+                    double min = rf.getMin().isEmpty() ? Double.NEGATIVE_INFINITY : Double.parseDouble(rf.getMin());
+                    double max = rf.getMax().isEmpty() ? Double.POSITIVE_INFINITY : Double.parseDouble(rf.getMax());
+                    if (rf.getMinExclusive()) min = Math.nextUp(min);
+                    if (rf.getMaxExclusive()) max = Math.nextDown(max);
+                    yield DoublePoint.newRangeQuery(fieldName, min, max);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Invalid numeric value in range filter for field '" + fieldName + "': " + e.getMessage());
+                }
             }
             default -> throw new IllegalArgumentException("Range filter not supported for type: " + type);
         };

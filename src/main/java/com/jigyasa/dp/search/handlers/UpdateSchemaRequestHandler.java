@@ -26,7 +26,7 @@ public class UpdateSchemaRequestHandler extends RequestHandlerBase<UpdateSchemaR
             observer.onNext(UpdateSchemaResponse.newBuilder().build());
             observer.onCompleted();
         } catch (Exception e) {
-            observer.onError(e);
+            observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
         }
     }
 }

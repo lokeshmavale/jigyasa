@@ -19,7 +19,7 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
     private final IndexWriterManagerISCH writerManager;
     private final TranslogAppenderManager translogAppenderManager;
     private final ScheduledExecutorService scheduledExecutorService;
-    private IndexSchema indexSchema;
+    private volatile IndexSchema indexSchema;
     private ScheduledFuture<?> commitTask;
 
     @Override
@@ -46,8 +46,8 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
                 log.debug("Commit completed successfully");
             }
         } catch (Exception e) {
-            log.error("Failed to commit data to storage", e);
-            throw new RuntimeException("Failed to commit data to storage", e);
+            // Log but do NOT rethrow — rethrowing kills scheduleWithFixedDelay permanently
+            log.error("Failed to commit data to storage (will retry next cycle)", e);
         } finally {
             this.writerManager.releaseWriter();
         }
@@ -60,20 +60,23 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
             return;
         }
         log.info("Starting recovery of {} translog entries", data.size());
-        try {
-            for (IndexRequest indexRequest : data) {
-                final IndexWriter writer = this.writerManager.acquireWriter();
-                try {
-                    IndexRequestHandler.processIndexRequests(indexRequest, this.indexSchema, writer, null);
-                } finally {
-                    this.writerManager.releaseWriter();
-                }
+        int succeeded = 0;
+        int failed = 0;
+        for (IndexRequest indexRequest : data) {
+            final IndexWriter writer = this.writerManager.acquireWriter();
+            try {
+                IndexRequestHandler.processIndexRequests(indexRequest, this.indexSchema, writer, null);
+                succeeded++;
+            } catch (Exception e) {
+                failed++;
+                log.error("Recovery failed for translog entry {}/{}, skipping", succeeded + failed, data.size(), e);
+            } finally {
+                this.writerManager.releaseWriter();
             }
-            log.info("Recovery completed for {} requests", data.size());
+        }
+        log.info("Recovery completed: {} succeeded, {} failed out of {} entries", succeeded, failed, data.size());
+        if (succeeded > 0) {
             performCommit();
-        } catch (Exception e) {
-            log.error("Failed to perform recovery", e);
-            throw new RuntimeException("Failed to perform recovery", e);
         }
     }
 
@@ -82,6 +85,15 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
             commitTask.cancel(false);
         }
         scheduledExecutorService.shutdown();
+        try {
+            if (!scheduledExecutorService.awaitTermination(10, TimeUnit.SECONDS)) {
+                scheduledExecutorService.shutdownNow();
+                log.warn("Commit executor did not terminate in 10s, forced shutdown");
+            }
+        } catch (InterruptedException e) {
+            scheduledExecutorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         log.info("Recovery/commit service shut down");
     }
 }
