@@ -8,6 +8,7 @@ import org.apache.lucene.analysis.DelegatingAnalyzerWrapper;
 import java.util.Map;
 
 public class PerFieldAnalyzer extends DelegatingAnalyzerWrapper {
+    private static final Analyzer DEFAULT_FALLBACK_ANALYZER = new org.apache.lucene.analysis.standard.StandardAnalyzer();
     private final Map<String, Analyzer> perFieldAnalyzerMap;
     private final Map<String, SchemaField> schemaFieldMap;
 
@@ -21,7 +22,7 @@ public class PerFieldAnalyzer extends DelegatingAnalyzerWrapper {
     public Analyzer getWrappedAnalyzer(String fieldName) {
         Analyzer analyzer = perFieldAnalyzerMap.get(fieldName);
         if (analyzer == null) {
-            return new org.apache.lucene.analysis.standard.StandardAnalyzer();
+            return DEFAULT_FALLBACK_ANALYZER;
         }
         return analyzer;
     }

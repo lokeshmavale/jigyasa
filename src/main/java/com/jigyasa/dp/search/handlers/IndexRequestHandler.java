@@ -53,13 +53,12 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             indexWriterManager = handlerHelpers.getIndexWriterManager();
             final IndexWriter writer = indexWriterManager.acquireWriter();
             IndexSchema indexSchema = handlerHelpers.getIndexSchemaManager().getIndexSchema();
-            // Pre-validate request before WAL write to avoid poison translog entries
-            // (parsing + key field presence). This ensures only replayable entries are persisted.
-            List<IndexRequestContext> contexts = getRequestContexts(req);
-            getUniqueDocKeysForRequest(contexts, indexSchema.getInitializedSchema());
-            // WAL: write translog BEFORE indexing for crash-safe recovery
+            // Index first, then persist to translog. If crash between index and translog,
+            // uncommitted Lucene buffer is lost — acceptable (same as ES default durability).
+            // Writing translog BEFORE would cause ghost data: if indexing fails (validation error),
+            // client gets error, but recovery replays the entry → data appears that client was told failed.
+            IndexResult result = processIndexRequests(req, indexSchema, writer, lock);
             handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
-            IndexResult result = processIndexRequests(req, indexSchema, writer, lock, contexts);
             // NRT refresh based on client's requested policy
             RefreshPolicy refresh = req.getRefresh();
             if (refresh == RefreshPolicy.NONE) {
@@ -87,10 +86,7 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
     public record IndexResult(IndexResponse response, long maxSeqNo) {}
 
     public static IndexResult processIndexRequests(IndexRequest req, IndexSchema indexSchema, IndexWriter indexWriter, DocIdOverlapLock lock) throws InterruptedException, TimeoutException {
-        return processIndexRequests(req, indexSchema, indexWriter, lock, getRequestContexts(req));
-    }
-
-    public static IndexResult processIndexRequests(IndexRequest req, IndexSchema indexSchema, IndexWriter indexWriter, DocIdOverlapLock lock, List<IndexRequestContext> requestContexts) throws InterruptedException, TimeoutException {
+        List<IndexRequestContext> requestContexts = getRequestContexts(req);
         Set<String> uniqueDocKeysForRequest = getUniqueDocKeysForRequest(requestContexts, indexSchema.getInitializedSchema());
 
         // Namespace keys with collection name to prevent cross-collection false contention

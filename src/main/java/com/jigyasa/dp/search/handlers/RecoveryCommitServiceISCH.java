@@ -38,8 +38,9 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
     }
 
     private void performCommit() {
-        final IndexWriter writer = this.writerManager.acquireWriter();
+        IndexWriter writer = null;
         try {
+            writer = this.writerManager.acquireWriter();
             if (writer.hasUncommittedChanges()) {
                 writer.commit();
                 this.translogAppenderManager.getAppender().reset();
@@ -49,7 +50,9 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
             // Log but do NOT rethrow — rethrowing kills scheduleWithFixedDelay permanently
             log.error("Failed to commit data to storage (will retry next cycle)", e);
         } finally {
-            this.writerManager.releaseWriter();
+            if (writer != null) {
+                this.writerManager.releaseWriter();
+            }
         }
     }
 
@@ -75,8 +78,24 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
             }
         }
         log.info("Recovery completed: {} succeeded, {} failed out of {} entries", succeeded, failed, data.size());
-        if (succeeded > 0) {
+        if (succeeded > 0 && failed == 0) {
+            // Only commit+reset translog when ALL entries succeeded.
+            // If any failed, preserve translog so failed entries aren't lost.
             performCommit();
+        } else if (succeeded > 0) {
+            // Commit succeeded entries to Lucene but do NOT reset translog.
+            // Failed entries remain in translog for manual inspection / next restart.
+            try {
+                final IndexWriter writer = this.writerManager.acquireWriter();
+                try {
+                    writer.commit();
+                    log.warn("Committed {} recovered entries but preserved translog ({} entries failed)", succeeded, failed);
+                } finally {
+                    this.writerManager.releaseWriter();
+                }
+            } catch (Exception e) {
+                log.error("Failed to commit recovered entries", e);
+            }
         }
     }
 

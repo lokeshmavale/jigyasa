@@ -95,6 +95,21 @@ public class CollectionContext {
         try { commitService.shutdown(); } catch (Exception e) {
             log.error("Error shutting down commit service for collection '{}'", name, e);
         }
+        // Final commit before closing translog — ensures buffered data is committed
+        // and translog is reset, so restart doesn't replay already-committed entries
+        try {
+            org.apache.lucene.index.IndexWriter writer = writerManager.getWriter();
+            if (writer != null && writer.isOpen() && writer.hasUncommittedChanges()) {
+                writer.commit();
+                TranslogAppenderManager tam = helpers.getTranslogAppenderManager();
+                if (tam.getAppender() != null) {
+                    tam.getAppender().reset();
+                }
+                log.info("Final commit completed for collection '{}'", name);
+            }
+        } catch (Exception e) {
+            log.error("Error during final commit for collection '{}'", name, e);
+        }
         try {
             TranslogAppenderManager tam = helpers.getTranslogAppenderManager();
             if (tam.getAppender() instanceof FileAppender fa) {

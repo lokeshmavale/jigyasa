@@ -71,6 +71,6 @@ public class GrpcServerWrapper {
                 log.error("Error shutting down collection registry", e);
             }
         }
-        log.info("Server shut down gracefully");
+        log.info("Server shutdown complete");
     }
 }

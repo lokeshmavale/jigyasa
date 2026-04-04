@@ -167,17 +167,12 @@ public class IndexWriterManagerISCH implements IndexSchemaChangeHandler {
         if (!indexWriter.isOpen()) {
             // Upgrade to write lock to reinitialize
             writerAccessLock.readLock().unlock();
-            try {
-                updateIndexWriter(indexSchema);
-            } catch (Exception e) {
-                writerAccessLock.readLock().lock();
-                throw e;
-            }
+            updateIndexWriter(indexSchema);
             writerAccessLock.readLock().lock();
             // Re-check state after re-acquiring lock (close TOCTOU window)
-            if (closed) {
+            if (closed || !indexWriter.isOpen()) {
                 writerAccessLock.readLock().unlock();
-                throw new IllegalStateException("IndexWriterManager was shut down during writer reinitialization");
+                throw new IllegalStateException("IndexWriterManager was shut down or writer closed during reinitialization");
             }
         }
         return indexWriter;
