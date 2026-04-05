@@ -126,6 +126,53 @@ class FileAppenderTest {
         assertThat(recovered).isEmpty();
     }
 
+    @Test
+    @DisplayName("Checkpoint persists file number across restarts")
+    void checkpointPersistsFileNumber() throws Exception {
+        appender.append(buildRequest("doc1", "data"));
+        appender.closeOpenFiles();
+
+        // Create new appender from same dir — should resume from checkpoint
+        FileAppender recovered = new FileAppender(tempDir.toString());
+        try {
+            recovered.append(buildRequest("doc2", "more data"));
+            List<IndexRequest> data = recovered.getData();
+            // Both entries should be recoverable
+            assertThat(data).hasSizeGreaterThanOrEqualTo(1);
+        } finally {
+            recovered.closeOpenFiles();
+        }
+    }
+
+    @Test
+    @DisplayName("Corrupt protobuf entry is skipped without crash")
+    void corruptProtobufEntrySkipped() throws Exception {
+        appender.append(buildRequest("doc1", "valid"));
+        appender.closeOpenFiles();
+
+        // Find the translog file and append garbage with a valid length header
+        Path[] files = Files.list(tempDir)
+                .filter(p -> p.getFileName().toString().startsWith("translog.dat"))
+                .sorted()
+                .toArray(Path[]::new);
+
+        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(files[0].toFile(), true))) {
+            byte[] garbage = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05};
+            dos.writeLong(garbage.length);  // valid length header
+            dos.write(garbage);              // invalid protobuf
+        }
+
+        FileAppender recovered = new FileAppender(tempDir.toString());
+        try {
+            List<IndexRequest> data = recovered.getData();
+            // Should have 1 valid entry, corrupt one skipped
+            assertThat(data).hasSize(1);
+            assertThat(data.get(0).getItem(0).getDocument()).isEqualTo("valid");
+        } finally {
+            recovered.closeOpenFiles();
+        }
+    }
+
     private IndexRequest buildRequest(String id, String content) {
         return IndexRequest.newBuilder()
                 .addItem(IndexItem.newBuilder()

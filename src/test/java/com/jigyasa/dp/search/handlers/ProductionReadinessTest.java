@@ -460,7 +460,25 @@ class ProductionReadinessTest {
         }
     }
 
-    // ==================== Test 7: SourceVisitor returns defensive copy ====================
+    // ==================== Test 7: TranslogAppender interface ====================
+
+    @Nested
+    @DisplayName("TranslogAppender interface")
+    class TranslogAppenderInterfaceTest {
+        @Test
+        @DisplayName("TranslogAppender interface has shutdown() default method")
+        void translogAppenderHasShutdownMethod() throws Exception {
+            TranslogAppender appender = new TranslogAppender() {
+                @Override public void append(IndexRequest request) {}
+                @Override public void reset() {}
+                @Override public List<IndexRequest> getData() { return List.of(); }
+            };
+            // Should not throw — default method does nothing
+            appender.shutdown();
+        }
+    }
+
+    // ==================== Test 8: SourceVisitor returns defensive copy ====================
 
     @Nested
     @DisplayName("SourceVisitor returns defensive copy")
