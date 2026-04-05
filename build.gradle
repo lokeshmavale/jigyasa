@@ -14,9 +14,16 @@ plugins {
 application {
     mainClass = 'com.jigyasa.dp.search.entrypoint.Main'
     // Production JVM flags:
-    // -XX:+AlwaysPreTouch pre-faults heap pages into RAM (prevents swap-induced GC spikes)
-    // --add-modules jdk.incubator.vector enables SIMD acceleration for vector search
-    applicationDefaultJvmArgs = ['-XX:+AlwaysPreTouch', '--add-modules', 'jdk.incubator.vector']
+    // --add-modules jdk.incubator.vector — enables Lucene SIMD vectorization (4-8x faster HNSW)
+    // -XX:+AlwaysPreTouch — pre-faults heap pages into RAM (prevents swap-induced GC spikes)
+    // -Dlucene.useScalarFMA=true — enable FMA for scalar distance computations
+    // -Dlucene.useVectorFMA=true — enable FMA for SIMD distance computations
+    applicationDefaultJvmArgs = [
+        '--add-modules', 'jdk.incubator.vector',
+        '-XX:+AlwaysPreTouch',
+        '-Dlucene.useScalarFMA=true',
+        '-Dlucene.useVectorFMA=true'
+    ]
 }
 
 // --- Version Catalog ---

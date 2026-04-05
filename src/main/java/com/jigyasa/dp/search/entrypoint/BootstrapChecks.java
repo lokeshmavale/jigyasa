@@ -19,6 +19,7 @@ public final class BootstrapChecks {
         checkHeapSize();
         checkMemoryLock();
         checkAlwaysPreTouch();
+        checkVectorSIMD();
     }
 
     /**
@@ -65,6 +66,43 @@ public final class BootstrapChecks {
         if (!found) {
             log.warn("BOOTSTRAP CHECK: -XX:+AlwaysPreTouch not set — heap pages may be swapped out under memory pressure. " +
                     "Add '-XX:+AlwaysPreTouch' to JVM args for production deployments.");
+        }
+    }
+
+    /**
+     * Check if Lucene's SIMD vectorization is active via jdk.incubator.vector.
+     * Without this, HNSW distance computations (dot product, cosine similarity)
+     * fall back to scalar math — up to 4-8x slower for vector search.
+     *
+     * Also checks FMA (Fused Multiply-Add) settings:
+     * - lucene.useScalarFMA: FMA for scalar operations
+     * - lucene.useVectorFMA: FMA for SIMD operations
+     * Both default to "auto" which is correct for most CPUs.
+     */
+    private static void checkVectorSIMD() {
+        boolean simdAvailable = false;
+        try {
+            // Lucene's VectorizationProvider logs a WARNING if the module is not readable.
+            // We check the module system directly.
+            Module vectorModule = ModuleLayer.boot().findModule("jdk.incubator.vector").orElse(null);
+            simdAvailable = vectorModule != null;
+        } catch (Exception e) {
+            // Module API not available or other issue
+        }
+
+        if (!simdAvailable) {
+            log.warn("BOOTSTRAP CHECK: jdk.incubator.vector module NOT enabled. " +
+                    "Vector search (HNSW dot product, cosine similarity) will use scalar math — up to 4-8x slower. " +
+                    "Add '--add-modules jdk.incubator.vector' to JVM args. " +
+                    "Example: java --add-modules jdk.incubator.vector -jar jigyasa.jar");
+        } else {
+            log.info("BOOTSTRAP CHECK: SIMD vectorization enabled (jdk.incubator.vector module active)");
+
+            // Log FMA settings for visibility
+            String scalarFMA = System.getProperty("lucene.useScalarFMA", "auto");
+            String vectorFMA = System.getProperty("lucene.useVectorFMA", "auto");
+            log.info("BOOTSTRAP CHECK: Lucene FMA settings — scalar={}, vector={} (auto = CPU-optimal)",
+                    scalarFMA, vectorFMA);
         }
     }
 }
