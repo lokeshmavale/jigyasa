@@ -77,6 +77,14 @@ public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler {
         }
     }
 
+    public record SearcherLease(IndexSearcher searcher, IndexSearcherManagerISCH mgr) implements AutoCloseable {
+        @Override public void close() { mgr.releaseSearcher(searcher); }
+    }
+
+    public SearcherLease leaseSearcher() {
+        return new SearcherLease(acquireSearcher(), this);
+    }
+
     public void releaseSearcher(IndexSearcher searcher) {
         try {
             this.searcherManager.release(searcher);

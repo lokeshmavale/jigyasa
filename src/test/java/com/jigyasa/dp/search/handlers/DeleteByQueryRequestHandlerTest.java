@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
@@ -40,6 +41,7 @@ class DeleteByQueryRequestHandlerTest {
         when(helpers.getIndexSearcherManager()).thenReturn(searcherManager);
         when(helpers.getIndexSchemaManager()).thenReturn(schemaManager);
         when(writerManager.acquireWriter()).thenReturn(indexWriter);
+        when(writerManager.leaseWriter()).thenReturn(new IndexWriterManagerISCH.WriterLease(indexWriter, writerManager));
         when(indexWriter.getMaxCompletedSequenceNumber()).thenReturn(42L);
 
         // Set up a schema with a filterable string field "status"
@@ -109,12 +111,8 @@ class DeleteByQueryRequestHandlerTest {
 
         @SuppressWarnings("unchecked")
         StreamObserver<DeleteByQueryResponse> observer = mock(StreamObserver.class);
-        handler.internalHandle(req, observer);
-
-        ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
-        verify(observer).onError(captor.capture());
-        assertThat(((StatusRuntimeException) captor.getValue()).getStatus().getCode())
-                .isEqualTo(Status.Code.INVALID_ARGUMENT);
+        assertThatThrownBy(() -> handler.internalHandle(req, observer))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -149,9 +147,10 @@ class DeleteByQueryRequestHandlerTest {
 
         @SuppressWarnings("unchecked")
         StreamObserver<DeleteByQueryResponse> observer = mock(StreamObserver.class);
-        handler.internalHandle(req, observer);
+        assertThatThrownBy(() -> handler.internalHandle(req, observer))
+                .isInstanceOf(IllegalArgumentException.class);
 
-        // Filter validation fails before acquireWriter, so releaseWriter should NOT be called
+        // Filter validation fails before leaseWriter, so releaseWriter should NOT be called
         verify(writerManager, never()).releaseWriter();
     }
 

@@ -178,6 +178,14 @@ public class IndexWriterManagerISCH implements IndexSchemaChangeHandler {
         return indexWriter;
     }
 
+    public record WriterLease(IndexWriter writer, IndexWriterManagerISCH mgr) implements AutoCloseable {
+        @Override public void close() { mgr.releaseWriter(); }
+    }
+
+    public WriterLease leaseWriter() {
+        return new WriterLease(acquireWriter(), this);
+    }
+
     public void releaseWriter() {
         writerAccessLock.readLock().unlock();
     }

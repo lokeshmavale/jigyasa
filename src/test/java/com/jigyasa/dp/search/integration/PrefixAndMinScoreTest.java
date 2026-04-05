@@ -233,6 +233,7 @@ class PrefixAndMinScoreTest {
         IndexSearcher acquiredSearcher = new IndexSearcher(reader);
         acquiredSearcher.setSimilarity(schema.getInitializedSchema().getBm25Similarity());
         when(searcherManager.acquireSearcher()).thenReturn(acquiredSearcher);
+        when(searcherManager.leaseSearcher()).thenReturn(new IndexSearcherManagerISCH.SearcherLease(acquiredSearcher, searcherManager));
 
         HandlerHelpers helpers = mock(HandlerHelpers.class);
         when(helpers.getIndexSchemaManager()).thenReturn(schemaManager);

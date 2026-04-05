@@ -144,19 +144,28 @@ public class BaseQueryBuilder {
         }
     }
 
+    /**
+     * Applies a query factory to a specific field or, if field is empty,
+     * across all searchable text fields as a disjunction.
+     */
+    private static Query forFieldOrAllSearchable(String field, InitializedIndexSchema schema,
+                                                  java.util.function.Function<String, Query> queryFactory) {
+        if (!field.isEmpty()) {
+            return queryFactory.apply(field);
+        }
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        for (SchemaField sf : schema.getFieldLookupMap().values()) {
+            if (sf.isSearchable() && isTextField(sf.getType())) {
+                builder.add(queryFactory.apply(sf.getName()), BooleanClause.Occur.SHOULD);
+            }
+        }
+        return builder.build();
+    }
+
     // ---- Text query building (shared with HybridRrfExecutor via package access) ----
 
     static Query buildTextQuery(String queryText, String field, InitializedIndexSchema schema) {
-        if (field.isEmpty()) {
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
-            for (SchemaField sf : schema.getFieldLookupMap().values()) {
-                if (sf.isSearchable() && isTextField(sf.getType())) {
-                    builder.add(buildTermQueryForField(sf.getName(), queryText), BooleanClause.Occur.SHOULD);
-                }
-            }
-            return builder.build();
-        }
-        return buildTermQueryForField(field, queryText);
+        return forFieldOrAllSearchable(field, schema, f -> buildTermQueryForField(f, queryText));
     }
 
     static Query buildTermQueryForField(String fieldName, String queryText) {
@@ -178,31 +187,15 @@ public class BaseQueryBuilder {
     }
 
     static Query buildPrefixQuery(String prefix, String field, InitializedIndexSchema schema) {
-        if (field.isEmpty()) {
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
-            for (SchemaField sf : schema.getFieldLookupMap().values()) {
-                if (sf.isSearchable() && isTextField(sf.getType())) {
-                    builder.add(new PrefixQuery(new Term(sf.getName(), prefix.toLowerCase())), BooleanClause.Occur.SHOULD);
-                }
-            }
-            return builder.build();
-        }
-        return new PrefixQuery(new Term(field, prefix.toLowerCase()));
+        return forFieldOrAllSearchable(field, schema,
+                f -> new PrefixQuery(new Term(f, prefix.toLowerCase())));
     }
 
     // ---- Phrase query building ----
 
     static Query buildPhraseQuery(String phraseText, String field, int slop, InitializedIndexSchema schema) {
-        if (field.isEmpty()) {
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
-            for (SchemaField sf : schema.getFieldLookupMap().values()) {
-                if (sf.isSearchable() && isTextField(sf.getType())) {
-                    builder.add(buildPhraseQueryForField(sf.getName(), phraseText, slop), BooleanClause.Occur.SHOULD);
-                }
-            }
-            return builder.build();
-        }
-        return buildPhraseQueryForField(field, phraseText, slop);
+        return forFieldOrAllSearchable(field, schema,
+                f -> buildPhraseQueryForField(f, phraseText, slop));
     }
 
     static Query buildPhraseQueryForField(String fieldName, String phraseText, int slop) {
@@ -227,17 +220,8 @@ public class BaseQueryBuilder {
     static Query buildFuzzyQuery(String fuzzyText, String field, int maxEdits, int prefixLength, InitializedIndexSchema schema) {
         int edits = Math.max(0, Math.min(maxEdits <= 0 ? 2 : maxEdits, 2));
         int prefix = Math.max(0, prefixLength);
-
-        if (field.isEmpty()) {
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
-            for (SchemaField sf : schema.getFieldLookupMap().values()) {
-                if (sf.isSearchable() && isTextField(sf.getType())) {
-                    builder.add(buildFuzzyQueryForField(sf.getName(), fuzzyText, edits, prefix), BooleanClause.Occur.SHOULD);
-                }
-            }
-            return builder.build();
-        }
-        return buildFuzzyQueryForField(field, fuzzyText, edits, prefix);
+        return forFieldOrAllSearchable(field, schema,
+                f -> buildFuzzyQueryForField(f, fuzzyText, edits, prefix));
     }
 
     static Query buildFuzzyQueryForField(String fieldName, String fuzzyText, int maxEdits, int prefixLength) {

@@ -47,17 +47,13 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
     @Override
     public void internalHandle(IndexRequest req, StreamObserver<IndexResponse> observer) {
         HandlerHelpers handlerHelpers = registry.resolveHelpers(req.getCollection());
-
-        IndexWriterManagerISCH indexWriterManager = null;
-        try {
-            indexWriterManager = handlerHelpers.getIndexWriterManager();
-            final IndexWriter writer = indexWriterManager.acquireWriter();
+        try (var lease = handlerHelpers.getIndexWriterManager().leaseWriter()) {
             IndexSchema indexSchema = handlerHelpers.getIndexSchemaManager().getIndexSchema();
             // Index first, then persist to translog. If crash between index and translog,
             // uncommitted Lucene buffer is lost — acceptable (same as ES default durability).
             // Writing translog BEFORE would cause ghost data: if indexing fails (validation error),
             // client gets error, but recovery replays the entry → data appears that client was told failed.
-            IndexResult result = processIndexRequests(req, indexSchema, writer, lock);
+            IndexResult result = processIndexRequests(req, indexSchema, lease.writer(), lock);
             handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
             // NRT refresh based on client's requested policy
             RefreshPolicy refresh = req.getRefresh();
@@ -73,13 +69,7 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             observer.onCompleted();
         } catch (Exception e) {
             log.error("Index request failed", e);
-            // FQN required: io.grpc.Status collides with com.google.rpc.Status import
             observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
-        } finally {
-
-            if (indexWriterManager != null) {
-                indexWriterManager.releaseWriter();
-            }
         }
     }
 

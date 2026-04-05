@@ -58,11 +58,9 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
     @Override
     public void internalHandle(QueryRequest req, StreamObserver<QueryResponse> observer) {
         HandlerHelpers helpers = registry.resolveHelpers(req.getCollection());
-        IndexSearcher indexSearcher = null;
-        try {
+        try (var lease = helpers.getIndexSearcherManager().leaseSearcher()) {
             IndexSchema indexSchema = helpers.getIndexSchemaManager().getIndexSchema();
             InitializedIndexSchema schema = indexSchema.getInitializedSchema();
-            indexSearcher = helpers.getIndexSearcherManager().acquireSearcher();
             QueryContext context = new QueryContext(req, indexSchema, schema);
 
             int topK = resolveTopK(req.getTopK());
@@ -72,16 +70,16 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
 
             TopDocs topDocs;
             if (queryBuilder.isHybrid(req)) {
-                topDocs = hybridExecutor.execute(indexSearcher, context, numHits);
+                topDocs = hybridExecutor.execute(lease.searcher(), context, numHits);
             } else {
                 Query query = queryBuilder.build(context);
                 query = pipeline.apply(query, context);
                 Sort sort = SortBuilder.build(req.getSortList(), schema);
-                topDocs = executor.execute(indexSearcher, query, numHits, sort,
+                topDocs = executor.execute(lease.searcher(), query, numHits, sort,
                         useSearchAfter ? req.getSearchAfter() : null);
             }
 
-            QueryResponse response = responseBuilder.build(topDocs, indexSearcher, schema,
+            QueryResponse response = responseBuilder.build(topDocs, lease.searcher(), schema,
                     req.getIncludeSource(), offset, topK, req.getMinScore(),
                     req.getSourceFieldsList());
             observer.onNext(response);
@@ -92,10 +90,6 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
         } catch (Exception e) {
             log.error("Query execution failed", e);
             observer.onError(Status.INTERNAL.withDescription("Query execution failed: " + e.getMessage()).asRuntimeException());
-        } finally {
-            if (indexSearcher != null) {
-                helpers.getIndexSearcherManager().releaseSearcher(indexSearcher);
-            }
         }
     }
 

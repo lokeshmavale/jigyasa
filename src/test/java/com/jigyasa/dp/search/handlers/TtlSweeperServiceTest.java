@@ -48,7 +48,7 @@ class TtlSweeperServiceTest {
         sweeper.shutdown();
 
         verify(future).cancel(false);
-        verify(executor).shutdown();
+        verify(executor, times(2)).shutdown();
         verify(executor).awaitTermination(5, TimeUnit.SECONDS);
     }
 

@@ -46,23 +46,21 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
     @Override
     public void internalHandle(LookupRequest req, StreamObserver<LookupResponse> observer) {
         HandlerHelpers helpers = registry.resolveHelpers(req.getCollection());
-        IndexSearcher indexSearcher = null;
-        try {
+        try (var lease = helpers.getIndexSearcherManager().leaseSearcher()) {
             InitializedIndexSchema initializedSchema = helpers.getIndexSchemaManager().getIndexSchema().getInitializedSchema();
             String keyFieldName = initializedSchema.getKeyFieldName();
-            indexSearcher = helpers.getIndexSearcherManager().acquireSearcher();
             BooleanQuery.Builder builder = new BooleanQuery.Builder();
             builder.setMinimumNumberShouldMatch(1);
             for (String s : req.getDocKeysList()) {
                 builder.add(new TermQuery(new Term(keyFieldName, s)), BooleanClause.Occur.SHOULD);
             }
 
-            TopDocs search = indexSearcher.search(builder.build(), req.getDocKeysCount());
+            TopDocs search = lease.searcher().search(builder.build(), req.getDocKeysCount());
 
             LookupResponse.Builder response = LookupResponse.newBuilder();
             for (ScoreDoc scoreDoc : search.scoreDocs) {
                 SourceVisitor visitor = new SourceVisitor();
-                indexSearcher.storedFields().document(scoreDoc.doc, visitor);
+                lease.searcher().storedFields().document(scoreDoc.doc, visitor);
 
                 if (visitor.getSrc() != null) {
                     response.addDocuments(new String(visitor.getSrc(), StandardCharsets.UTF_8));
@@ -73,16 +71,7 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
             observer.onCompleted();
         } catch (Exception e) {
             observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
-        } finally {
-            if (indexSearcher != null) {
-                try {
-                    helpers.getIndexSearcherManager().releaseSearcher(indexSearcher);
-                } catch (Exception e) {
-                    // Best-effort release
-                }
-            }
         }
-
     }
 
 

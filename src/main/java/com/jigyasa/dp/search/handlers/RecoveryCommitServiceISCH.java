@@ -1,6 +1,7 @@
 package com.jigyasa.dp.search.handlers;
 
 import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.utils.ShutdownUtils;
 import com.jigyasa.dp.search.protocol.IndexRequest;
 import lombok.RequiredArgsConstructor;
 import org.apache.lucene.index.IndexWriter;
@@ -104,15 +105,7 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
             commitTask.cancel(false);
         }
         scheduledExecutorService.shutdown();
-        try {
-            if (!scheduledExecutorService.awaitTermination(10, TimeUnit.SECONDS)) {
-                scheduledExecutorService.shutdownNow();
-                log.warn("Commit executor did not terminate in 10s, forced shutdown");
-            }
-        } catch (InterruptedException e) {
-            scheduledExecutorService.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        ShutdownUtils.shutdownAndAwait(scheduledExecutorService, "Commit executor", 10);
         log.info("Recovery/commit service shut down");
     }
 }

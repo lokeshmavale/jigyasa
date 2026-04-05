@@ -1,6 +1,7 @@
 package com.jigyasa.dp.search.handlers;
 
 import com.jigyasa.dp.search.models.IndexSchemaManager;
+import com.jigyasa.dp.search.utils.ShutdownUtils;
 import com.jigyasa.dp.search.utils.SystemFields;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.IndexWriter;
@@ -49,14 +50,7 @@ public class TtlSweeperService {
             sweepTask.cancel(false);
         }
         executor.shutdown();
-        try {
-            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        ShutdownUtils.shutdownAndAwait(executor, "TTL sweeper", 5);
         log.info("TTL sweeper stopped");
     }
 

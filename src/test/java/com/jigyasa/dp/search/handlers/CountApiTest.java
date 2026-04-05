@@ -161,6 +161,7 @@ class CountApiTest {
         IndexSearcher searcher = new IndexSearcher(reader);
         searcher.setSimilarity(schema.getInitializedSchema().getBm25Similarity());
         when(searcherManager.acquireSearcher()).thenReturn(searcher);
+        when(searcherManager.leaseSearcher()).thenReturn(new IndexSearcherManagerISCH.SearcherLease(searcher, searcherManager));
 
         HandlerHelpers helpers = mock(HandlerHelpers.class);
         when(helpers.getIndexSchemaManager()).thenReturn(schemaManager);
