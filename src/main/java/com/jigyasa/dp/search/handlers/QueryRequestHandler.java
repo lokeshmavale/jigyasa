@@ -55,6 +55,8 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
         this.hybridExecutor = new HybridRrfExecutor(hybridPipeline);
     }
 
+    private static final int MAX_OFFSET = 10_000;
+
     @Override
     public void internalHandle(QueryRequest req, StreamObserver<QueryResponse> observer) {
         HandlerHelpers helpers = registry.resolveHelpers(req.getCollection());
@@ -64,9 +66,16 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
             QueryContext context = new QueryContext(req, indexSchema, schema);
 
             int topK = resolveTopK(req.getTopK());
+            int offset = Math.max(0, req.getOffset());
+            if (offset > MAX_OFFSET) {
+                throw new IllegalArgumentException("offset must be <= " + MAX_OFFSET + ", got: " + offset);
+            }
+            if (topK > MAX_TOP_K) {
+                topK = MAX_TOP_K;
+            }
             boolean useSearchAfter = req.hasSearchAfter();
-            int numHits = useSearchAfter ? topK : topK + Math.max(0, req.getOffset());
-            int offset = useSearchAfter ? 0 : Math.max(0, req.getOffset());
+            int numHits = useSearchAfter ? topK : topK + offset;
+            if (useSearchAfter) offset = 0;
 
             TopDocs topDocs;
             if (queryBuilder.isHybrid(req)) {

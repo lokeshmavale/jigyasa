@@ -56,7 +56,12 @@ public class DeleteByQueryRequestHandler extends RequestHandlerBase<DeleteByQuer
 
         try (var lease = helpers.getIndexWriterManager().leaseWriter()) {
             long seqNo = lease.writer().deleteDocuments(filterQuery);
-            log.info("DeleteByQuery executed, seqNo={}", seqNo);
+            // Force commit to make delete durable — delete-by-query is not translog'd,
+            // so without commit, crash before next periodic commit would resurrect deleted docs.
+            lease.writer().commit();
+            // Reset translog so recovery doesn't replay index ops that would re-add deleted docs
+            helpers.getTranslogAppenderManager().getAppender().reset();
+            log.info("DeleteByQuery executed and committed, seqNo={}", seqNo);
             helpers.getIndexSearcherManager().waitForGeneration(seqNo);
             observer.onNext(DeleteByQueryResponse.newBuilder()
                     .setDeletedCount(-1)

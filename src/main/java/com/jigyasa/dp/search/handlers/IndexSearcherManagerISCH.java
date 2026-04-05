@@ -47,7 +47,9 @@ public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler {
                 } finally {
                     writerManagerISCH.releaseWriter();
                 }
-            } else {
+                // Restart NRT reopen thread with new SearcherManager
+                startNrtThread();
+            }else {
                 try {
                     if (searcherManager != null) {
                         return;
@@ -150,22 +152,25 @@ public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler {
         }
     }
 
+    private void startNrtThread() {
+        ControlledRealTimeReopenThread<IndexSearcher> thread =
+                new ControlledRealTimeReopenThread<>(
+                        writerManagerISCH.getWriter(),
+                        searcherManager,
+                        TARGET_MAX_STALE_SEC,
+                        TARGET_MIN_STALE_SEC);
+        thread.setName("jigyasa-nrt-reopen");
+        thread.setDaemon(true);
+        thread.start();
+        this.nrtReopenThread = thread;
+        log.info("NRT reopen thread started (minStale={}ms, maxStale={}ms)",
+                (long)(TARGET_MIN_STALE_SEC * 1000), (long)(TARGET_MAX_STALE_SEC * 1000));
+    }
+
     @Override
     public void initService() {
         if (mode == ServerMode.WRITE || mode == ServerMode.READ_WRITE) {
-            // Start NRT reopen thread — it uses IndexWriter's generation tracking internally
-            ControlledRealTimeReopenThread<IndexSearcher> thread =
-                    new ControlledRealTimeReopenThread<>(
-                            writerManagerISCH.getWriter(),
-                            searcherManager,
-                            TARGET_MAX_STALE_SEC,
-                            TARGET_MIN_STALE_SEC);
-            thread.setName("jigyasa-nrt-reopen");
-            thread.setDaemon(true);
-            thread.start();
-            this.nrtReopenThread = thread;
-            log.info("NRT reopen thread started (minStale={}ms, maxStale={}ms)",
-                    (long)(TARGET_MIN_STALE_SEC * 1000), (long)(TARGET_MAX_STALE_SEC * 1000));
+            startNrtThread();
         } else {
             // READ-only mode: periodic refresh from directory (no writer available)
             log.info("READ mode: NRT not applicable, searcher refreshes on schema change only");

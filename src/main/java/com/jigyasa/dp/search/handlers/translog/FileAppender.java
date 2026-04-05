@@ -160,6 +160,7 @@ public class FileAppender implements TranslogAppender {
         fileOutputStream = new FileOutputStream(filePath.toString(), true);
         dos = new DataOutputStream(fileOutputStream);
         currentFileNumber++;
+        totalBytesWritten = 0;
     }
 
     public void closeOpenFiles() {
@@ -188,7 +189,7 @@ public class FileAppender implements TranslogAppender {
     public void append(IndexRequest request) throws IOException {
         final byte[] byteArray = request.toByteArray();
         synchronized (fileOpsLock) {
-            if (Files.size(Paths.get(dir, FILE_PREFIX + (currentFileNumber - 1))) + byteArray.length > MAX_FILE_SIZE) {
+            if (totalBytesWritten + byteArray.length > MAX_FILE_SIZE) {
                 openNewFile();
             }
             dos.writeLong(byteArray.length);
@@ -268,7 +269,12 @@ public class FileAppender implements TranslogAppender {
                                 opsRead - safeOps, safeOps);
                         break;
                     }
-                    items.add(IndexRequest.parseFrom(byteArray));
+                    try {
+                        items.add(IndexRequest.parseFrom(byteArray));
+                    } catch (Exception parseEx) {
+                        log.warn("Corrupt translog entry #{} in file {} ({} bytes), skipping",
+                                opsRead, path, length, parseEx);
+                    }
                 }
             } catch (IOException e) {
                 log.error("Error reading translog file: {}", path, e);

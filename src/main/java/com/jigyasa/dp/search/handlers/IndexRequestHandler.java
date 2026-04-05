@@ -54,7 +54,15 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             // Writing translog BEFORE would cause ghost data: if indexing fails (validation error),
             // client gets error, but recovery replays the entry → data appears that client was told failed.
             IndexResult result = processIndexRequests(req, indexSchema, lease.writer(), lock);
-            handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
+
+            // Only append to translog if at least one item was successfully indexed.
+            // This prevents unbounded translog growth from all-invalid requests.
+            boolean hasSuccessfulOps = result.response().getItemResponseList().stream()
+                    .anyMatch(s -> s.getCode() == Code.OK_VALUE);
+            if (hasSuccessfulOps) {
+                handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
+            }
+
             // NRT refresh based on client's requested policy
             RefreshPolicy refresh = req.getRefresh();
             if (refresh == RefreshPolicy.NONE) {
@@ -67,6 +75,9 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             }
             observer.onNext(result.response());
             observer.onCompleted();
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid index request: {}", e.getMessage());
+            observer.onError(io.grpc.Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
             log.error("Index request failed", e);
             observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
@@ -148,6 +159,9 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
                 String fieldName = entry.getKey();
                 JsonNode fieldValue = entry.getValue();
                 FieldMapperStrategy strategy = strategyMap.get(fieldName);
+                if (strategy == null) {
+                    throw new IllegalArgumentException("Unknown field: " + fieldName);
+                }
                 strategy.addFields(indexSchema, document, fieldName, fieldValue);
             }
             // Inject system fields only when TTL/memory tiers are enabled in schema
@@ -174,7 +188,7 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             try {
                 return new IndexRequestContext(s, OBJECT_MAPPER.readTree(s.getDocument()));
             } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
+                throw new IllegalArgumentException("Invalid JSON in document: " + e.getMessage(), e);
             }
         }).toList();
     }

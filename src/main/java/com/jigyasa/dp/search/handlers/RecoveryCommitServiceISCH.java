@@ -66,6 +66,7 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
         log.info("Starting recovery of {} translog entries", data.size());
         int succeeded = 0;
         int failed = 0;
+        List<IndexRequest> failedEntries = new java.util.ArrayList<>();
         for (IndexRequest indexRequest : data) {
             final IndexWriter writer = this.writerManager.acquireWriter();
             try {
@@ -73,6 +74,7 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
                 succeeded++;
             } catch (Exception e) {
                 failed++;
+                failedEntries.add(indexRequest);
                 log.error("Recovery failed for translog entry {}/{}, skipping", succeeded + failed, data.size(), e);
             } finally {
                 this.writerManager.releaseWriter();
@@ -80,22 +82,26 @@ public class RecoveryCommitServiceISCH implements IndexSchemaChangeHandler {
         }
         log.info("Recovery completed: {} succeeded, {} failed out of {} entries", succeeded, failed, data.size());
         if (succeeded > 0 && failed == 0) {
-            // Only commit+reset translog when ALL entries succeeded.
-            // If any failed, preserve translog so failed entries aren't lost.
             performCommit();
         } else if (succeeded > 0) {
-            // Commit succeeded entries to Lucene but do NOT reset translog.
-            // Failed entries remain in translog for manual inspection / next restart.
+            // Commit succeeded entries, then rewrite translog with only failed entries
+            // to prevent replay storms on subsequent restarts.
             try {
                 final IndexWriter writer = this.writerManager.acquireWriter();
                 try {
                     writer.commit();
-                    log.warn("Committed {} recovered entries but preserved translog ({} entries failed)", succeeded, failed);
                 } finally {
                     this.writerManager.releaseWriter();
                 }
+                // Rewrite translog with only failed entries
+                this.translogAppenderManager.getAppender().reset();
+                for (IndexRequest failedReq : failedEntries) {
+                    this.translogAppenderManager.getAppender().append(failedReq);
+                }
+                log.warn("Committed {} recovered entries, rewrote translog with {} failed entries",
+                        succeeded, failed);
             } catch (Exception e) {
-                log.error("Failed to commit recovered entries", e);
+                log.error("Failed to commit/rewrite translog after partial recovery", e);
             }
         }
     }
