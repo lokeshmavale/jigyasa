@@ -1,20 +1,41 @@
 package com.jigyasa.dp.search.query;
 
-import com.jigyasa.dp.search.models.*;
 import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.SchemaField;
 import com.jigyasa.dp.search.protocol.QueryRequest;
 import com.jigyasa.dp.search.protocol.RecencyDecay;
 import com.jigyasa.dp.search.utils.SystemFields;
-import org.apache.lucene.document.*;
-import org.apache.lucene.index.*;
-import org.apache.lucene.search.*;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.FieldType;
+import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.NumericDocValuesField;
+import org.apache.lucene.document.SortedNumericDocValuesField;
+import org.apache.lucene.document.StoredField;
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexOptions;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.BoostQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Tests for QueryPipeline and RecencyDecayModifier.

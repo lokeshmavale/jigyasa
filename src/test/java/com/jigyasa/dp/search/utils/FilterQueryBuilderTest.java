@@ -1,18 +1,32 @@
 package com.jigyasa.dp.search.utils;
 
 import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
-import com.jigyasa.dp.search.models.*;
-import com.jigyasa.dp.search.protocol.*;
-import org.apache.lucene.document.DoublePoint;
-import org.apache.lucene.document.IntPoint;
-import org.apache.lucene.document.LatLonPoint;
-import org.apache.lucene.document.LongPoint;
-import org.apache.lucene.search.*;
-import org.junit.jupiter.api.*;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.InitializedIndexSchema;
+import com.jigyasa.dp.search.models.SchemaField;
+import com.jigyasa.dp.search.protocol.CompoundFilter;
+import com.jigyasa.dp.search.protocol.ExistsFilter;
+import com.jigyasa.dp.search.protocol.FilterClause;
+import com.jigyasa.dp.search.protocol.GeoBoundingBoxFilter;
+import com.jigyasa.dp.search.protocol.GeoDistanceFilter;
+import com.jigyasa.dp.search.protocol.RangeFilter;
+import com.jigyasa.dp.search.protocol.TermFilter;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.FieldExistsQuery;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermQuery;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for FilterQueryBuilder.

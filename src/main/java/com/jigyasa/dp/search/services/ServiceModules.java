@@ -1,17 +1,21 @@
 package com.jigyasa.dp.search.services;
 
+import com.google.inject.AbstractModule;
+import com.google.inject.Provides;
+import com.google.inject.Singleton;
+import com.google.inject.name.Named;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.entrypoint.FileBasedSchemaReader;
 import com.jigyasa.dp.search.entrypoint.GrpcServerWrapper;
 import com.jigyasa.dp.search.entrypoint.IndexManager;
 import com.jigyasa.dp.search.entrypoint.IndexSchemaReader;
-import com.jigyasa.dp.search.handlers.*;
+import com.jigyasa.dp.search.handlers.DeleteByQueryRequestHandler;
+import com.jigyasa.dp.search.handlers.IndexRequestHandler;
+import com.jigyasa.dp.search.handlers.LookupRequestHandler;
+import com.jigyasa.dp.search.handlers.QueryRequestHandler;
+import com.jigyasa.dp.search.handlers.UpdateSchemaRequestHandler;
 import com.jigyasa.dp.search.models.ServerMode;
 import com.jigyasa.dp.search.utils.DocIdOverlapLock;
-import com.google.inject.AbstractModule;
-import com.google.inject.Provides;
-import com.google.inject.Singleton;
-import com.google.inject.name.Named;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;

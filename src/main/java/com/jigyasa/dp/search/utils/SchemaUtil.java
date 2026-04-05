@@ -1,7 +1,7 @@
 package com.jigyasa.dp.search.utils;
 
-import com.jigyasa.dp.search.models.IndexSchema;
 import com.google.gson.Gson;
+import com.jigyasa.dp.search.models.IndexSchema;
 
 public final class SchemaUtil {
     private static final Gson GSON = new Gson();

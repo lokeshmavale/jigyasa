@@ -1,6 +1,5 @@
 package com.jigyasa.dp.search.query;
 
-import com.jigyasa.dp.search.protocol.QueryRequest;
 import org.apache.lucene.search.Query;
 
 /**

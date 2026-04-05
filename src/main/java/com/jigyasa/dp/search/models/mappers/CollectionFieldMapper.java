@@ -1,7 +1,7 @@
 package com.jigyasa.dp.search.models.mappers;
 
-import com.jigyasa.dp.search.models.IndexSchema;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jigyasa.dp.search.models.IndexSchema;
 import org.apache.lucene.document.Document;
 
 import java.util.function.Supplier;

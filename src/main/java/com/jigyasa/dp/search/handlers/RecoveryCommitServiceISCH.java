@@ -1,8 +1,8 @@
 package com.jigyasa.dp.search.handlers;
 
 import com.jigyasa.dp.search.models.IndexSchema;
-import com.jigyasa.dp.search.utils.ShutdownUtils;
 import com.jigyasa.dp.search.protocol.IndexRequest;
+import com.jigyasa.dp.search.utils.ShutdownUtils;
 import lombok.RequiredArgsConstructor;
 import org.apache.lucene.index.IndexWriter;
 import org.slf4j.Logger;

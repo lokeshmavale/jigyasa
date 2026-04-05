@@ -1,8 +1,12 @@
 package com.jigyasa.dp.search.collections;
 
 import com.jigyasa.dp.search.handlers.IndexRequestHandler;
-import com.jigyasa.dp.search.handlers.IndexWriterManagerISCH;
-import com.jigyasa.dp.search.models.*;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.HandlerHelpers;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.SchemaField;
+import com.jigyasa.dp.search.models.ServerMode;
 import com.jigyasa.dp.search.protocol.IndexAction;
 import com.jigyasa.dp.search.protocol.IndexItem;
 import com.jigyasa.dp.search.protocol.IndexRequest;
@@ -21,7 +25,8 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collection;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CollectionRegistryTest {
 

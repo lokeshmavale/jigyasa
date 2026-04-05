@@ -1,9 +1,17 @@
 package com.jigyasa.dp.search.models.mappers;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jigyasa.dp.search.models.FieldDataType;
 import com.jigyasa.dp.search.models.IndexSchema;
-import com.fasterxml.jackson.databind.JsonNode;
-import org.apache.lucene.document.*;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.DoubleDocValuesField;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.LatLonDocValuesField;
+import org.apache.lucene.document.NumericDocValuesField;
+import org.apache.lucene.document.SortedDocValuesField;
+import org.apache.lucene.document.SortedNumericDocValuesField;
+import org.apache.lucene.document.SortedSetDocValuesField;
+import org.apache.lucene.document.StoredField;
 import org.apache.lucene.util.BytesRef;
 
 import java.nio.charset.StandardCharsets;

@@ -1,9 +1,9 @@
 package com.jigyasa.dp.search.models.mappers;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jigyasa.dp.search.models.IndexSchema;
 import com.jigyasa.dp.search.models.LuceneFieldType;
 import com.jigyasa.dp.search.models.SchemaField;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.StringField;

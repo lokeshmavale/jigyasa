@@ -3,7 +3,12 @@ package com.jigyasa.dp.search.query;
 import com.jigyasa.dp.search.models.InitializedIndexSchema;
 import com.jigyasa.dp.search.protocol.QueryRequest;
 import com.jigyasa.dp.search.protocol.VectorQuery;
-import org.apache.lucene.search.*;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.KnnFloatVectorQuery;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TopDocs;
 
 import java.io.IOException;
 

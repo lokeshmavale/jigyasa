@@ -1,5 +1,10 @@
 package com.jigyasa.dp.search.handlers;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.rpc.Code;
+import com.google.rpc.Status;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.IndexSchema;
@@ -12,18 +17,13 @@ import com.jigyasa.dp.search.protocol.RefreshPolicy;
 import com.jigyasa.dp.search.services.RequestHandlerBase;
 import com.jigyasa.dp.search.utils.DocIdOverlapLock;
 import com.jigyasa.dp.search.utils.SystemFields;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.rpc.Code;
-import com.google.rpc.Status;
 import io.grpc.stub.StreamObserver;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.Term;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
 import java.util.List;

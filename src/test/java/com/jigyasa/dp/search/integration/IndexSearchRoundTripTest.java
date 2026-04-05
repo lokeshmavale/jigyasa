@@ -2,21 +2,33 @@ package com.jigyasa.dp.search.integration;
 
 import com.jigyasa.dp.search.handlers.IndexRequestHandler;
 import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
-import com.jigyasa.dp.search.models.*;
-import com.jigyasa.dp.search.protocol.*;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.LuceneFieldType;
+import com.jigyasa.dp.search.models.SchemaField;
+import com.jigyasa.dp.search.protocol.IndexAction;
+import com.jigyasa.dp.search.protocol.IndexItem;
+import com.jigyasa.dp.search.protocol.IndexRequest;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.search.*;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.KnnFloatVectorQuery;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
-import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration test: index documents, commit, then search/lookup to verify round-trip.

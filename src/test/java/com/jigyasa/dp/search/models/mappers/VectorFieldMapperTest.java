@@ -1,15 +1,21 @@
 package com.jigyasa.dp.search.models.mappers;
 
-import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
-import com.jigyasa.dp.search.models.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.SchemaField;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.KnnFloatVectorField;
 import org.apache.lucene.index.IndexableField;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class VectorFieldMapperTest {
 

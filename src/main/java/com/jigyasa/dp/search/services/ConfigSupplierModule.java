@@ -1,11 +1,11 @@
 package com.jigyasa.dp.search.services;
 
-import com.jigyasa.dp.search.configs.EnvironmentVariables;
-import com.jigyasa.dp.search.models.ServerMode;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import com.google.inject.name.Named;
+import com.jigyasa.dp.search.configs.EnvironmentVariables;
+import com.jigyasa.dp.search.models.ServerMode;
 
 import java.nio.file.Path;
 import java.util.Optional;

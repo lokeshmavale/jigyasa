@@ -1,8 +1,8 @@
 package com.jigyasa.dp.search.models.mappers;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jigyasa.dp.search.models.IndexSchema;
 import com.jigyasa.dp.search.models.SchemaField;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.KnnFloatVectorField;

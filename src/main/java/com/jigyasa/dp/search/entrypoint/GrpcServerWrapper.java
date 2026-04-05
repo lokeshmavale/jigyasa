@@ -1,8 +1,8 @@
 package com.jigyasa.dp.search.entrypoint;
 
+import com.google.inject.Inject;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.models.IndexSchema;
-import com.google.inject.Inject;
 import io.grpc.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

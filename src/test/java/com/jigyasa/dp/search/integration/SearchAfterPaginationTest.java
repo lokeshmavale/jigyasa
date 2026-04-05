@@ -1,9 +1,23 @@
 package com.jigyasa.dp.search.integration;
 
 import com.jigyasa.dp.search.collections.CollectionRegistry;
-import com.jigyasa.dp.search.handlers.*;
-import com.jigyasa.dp.search.models.*;
-import com.jigyasa.dp.search.protocol.*;
+import com.jigyasa.dp.search.handlers.IndexRequestHandler;
+import com.jigyasa.dp.search.handlers.IndexSearcherManagerISCH;
+import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
+import com.jigyasa.dp.search.handlers.QueryRequestHandler;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.HandlerHelpers;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.IndexSchemaManager;
+import com.jigyasa.dp.search.models.SchemaField;
+import com.jigyasa.dp.search.protocol.IndexAction;
+import com.jigyasa.dp.search.protocol.IndexItem;
+import com.jigyasa.dp.search.protocol.IndexRequest;
+import com.jigyasa.dp.search.protocol.QueryHit;
+import com.jigyasa.dp.search.protocol.QueryRequest;
+import com.jigyasa.dp.search.protocol.QueryResponse;
+import com.jigyasa.dp.search.protocol.SortClause;
 import io.grpc.stub.StreamObserver;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
@@ -11,14 +25,23 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for SearchAfter cursor-based pagination with various sort field types.

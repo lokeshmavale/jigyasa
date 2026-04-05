@@ -1,9 +1,15 @@
 package com.jigyasa.dp.search.handlers;
 
-import com.jigyasa.dp.search.models.*;
-import org.junit.jupiter.api.*;
+import com.jigyasa.dp.search.models.BM25Config;
+import com.jigyasa.dp.search.models.FieldDataType;
+import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.models.InitializedIndexSchema;
+import com.jigyasa.dp.search.models.SchemaField;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class InitializedSchemaISCHTest {
 

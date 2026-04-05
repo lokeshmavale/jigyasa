@@ -1,8 +1,14 @@
 package com.jigyasa.dp.search.utils;
 
 import com.jigyasa.dp.search.protocol.IndexItem;
-import com.jigyasa.dp.search.protocol.MemoryTier;
-import org.apache.lucene.document.*;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.NumericDocValuesField;
+import org.apache.lucene.document.SortedDocValuesField;
+import org.apache.lucene.document.SortedNumericDocValuesField;
+import org.apache.lucene.document.StoredField;
+import org.apache.lucene.document.StringField;
 
 /**
  * Injects system-level fields into every indexed document.

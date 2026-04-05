@@ -1,9 +1,9 @@
 package com.jigyasa.dp.search.entrypoint;
 
-import com.jigyasa.dp.search.services.ConfigSupplierModule;
-import com.jigyasa.dp.search.services.ServiceModules;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.jigyasa.dp.search.services.ConfigSupplierModule;
+import com.jigyasa.dp.search.services.ServiceModules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

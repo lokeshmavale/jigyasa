@@ -3,15 +3,19 @@ package com.jigyasa.dp.search.handlers.translog;
 import com.jigyasa.dp.search.protocol.IndexAction;
 import com.jigyasa.dp.search.protocol.IndexItem;
 import com.jigyasa.dp.search.protocol.IndexRequest;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.*;
+import java.io.DataOutputStream;
+import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class FileAppenderTest {
 

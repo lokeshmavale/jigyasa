@@ -10,8 +10,6 @@ import com.jigyasa.dp.search.utils.FilterQueryBuilder;
 import com.jigyasa.dp.search.utils.SystemFields;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

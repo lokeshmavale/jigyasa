@@ -1,7 +1,15 @@
 package com.jigyasa.dp.search.models;
 
-import com.jigyasa.dp.search.models.mappers.*;
 import com.google.gson.annotations.SerializedName;
+import com.jigyasa.dp.search.models.mappers.BooleanFieldMapper;
+import com.jigyasa.dp.search.models.mappers.CollectionFieldMapper;
+import com.jigyasa.dp.search.models.mappers.DoubleFieldMapper;
+import com.jigyasa.dp.search.models.mappers.FieldMapperStrategy;
+import com.jigyasa.dp.search.models.mappers.GeoPointFieldMapper;
+import com.jigyasa.dp.search.models.mappers.Int32FieldMapper;
+import com.jigyasa.dp.search.models.mappers.Int64FieldMapper;
+import com.jigyasa.dp.search.models.mappers.StringFieldMapper;
+import com.jigyasa.dp.search.models.mappers.VectorFieldMapper;
 
 import java.util.function.Supplier;
 
