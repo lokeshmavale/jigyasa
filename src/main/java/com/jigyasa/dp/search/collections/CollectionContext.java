@@ -106,7 +106,7 @@ public class CollectionContext {
             org.apache.lucene.index.IndexWriter writer = writerManager.getWriter();
             if (writer != null && writer.isOpen() && writer.hasUncommittedChanges()) {
                 writer.commit();
-                TranslogAppenderManager tam = helpers.getTranslogAppenderManager();
+                TranslogAppenderManager tam = helpers.translogAppenderManager();
                 if (tam.getAppender() != null) {
                     tam.getAppender().reset();
                 }
@@ -116,7 +116,7 @@ public class CollectionContext {
             log.error("Error during final commit for collection '{}'", name, e);
         }
         try {
-            TranslogAppenderManager tam = helpers.getTranslogAppenderManager();
+            TranslogAppenderManager tam = helpers.translogAppenderManager();
             if (tam.getAppender() instanceof FileAppender fa) {
                 fa.shutdown();
             }

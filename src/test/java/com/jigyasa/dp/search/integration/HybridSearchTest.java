@@ -270,8 +270,8 @@ class HybridSearchTest {
         when(searcherManager.leaseSearcher()).thenReturn(new IndexSearcherManagerISCH.SearcherLease(acquiredSearcher, searcherManager));
 
         HandlerHelpers helpers = mock(HandlerHelpers.class);
-        when(helpers.getIndexSchemaManager()).thenReturn(schemaManager);
-        when(helpers.getIndexSearcherManager()).thenReturn(searcherManager);
+        when(helpers.indexSchemaManager()).thenReturn(schemaManager);
+        when(helpers.indexSearcherManager()).thenReturn(searcherManager);
 
         CollectionRegistry registry = mock(CollectionRegistry.class);
         when(registry.resolveHelpers(anyString())).thenReturn(helpers);

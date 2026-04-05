@@ -33,7 +33,7 @@ public class DeleteByQueryRequestHandler extends RequestHandlerBase<DeleteByQuer
             return;
         }
 
-        InitializedIndexSchema schema = helpers.getIndexSchemaManager().getIndexSchema().getInitializedSchema();
+        InitializedIndexSchema schema = helpers.indexSchemaManager().getIndexSchema().getInitializedSchema();
         Query filterQuery = FilterQueryBuilder.buildFilterQuery(req.getFiltersList(), schema);
         if (filterQuery == null) {
             observer.onError(Status.INVALID_ARGUMENT
@@ -52,7 +52,7 @@ public class DeleteByQueryRequestHandler extends RequestHandlerBase<DeleteByQuer
                     .build();
         }
 
-        try (var lease = helpers.getIndexWriterManager().leaseWriter()) {
+        try (var lease = helpers.indexWriterManager().leaseWriter()) {
             long seqNo = lease.writer().deleteDocuments(filterQuery);
             // Force commit to make delete durable — delete-by-query is not translog'd,
             // so without commit, crash before next periodic commit would resurrect deleted docs.
@@ -61,13 +61,13 @@ public class DeleteByQueryRequestHandler extends RequestHandlerBase<DeleteByQuer
             // If reset fails, log error but still return success — the commit is durable and
             // the periodic commit thread will reset translog on its next successful cycle.
             try {
-                helpers.getTranslogAppenderManager().getAppender().reset();
+                helpers.translogAppenderManager().getAppender().reset();
             } catch (Exception resetEx) {
                 log.error("Translog reset failed after delete-by-query commit; " +
                         "periodic commit will clean up on next cycle", resetEx);
             }
             log.info("DeleteByQuery executed and committed, seqNo={}", seqNo);
-            helpers.getIndexSearcherManager().waitForGeneration(seqNo);
+            helpers.indexSearcherManager().waitForGeneration(seqNo);
             observer.onNext(DeleteByQueryResponse.newBuilder()
                     .setDeletedCount(-1)
                     .build());

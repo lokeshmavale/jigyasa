@@ -50,8 +50,8 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
     @Override
     public void internalHandle(LookupRequest req, StreamObserver<LookupResponse> observer) {
         HandlerHelpers helpers = registry.resolveHelpers(req.getCollection());
-        try (var lease = helpers.getIndexSearcherManager().leaseSearcher()) {
-            InitializedIndexSchema initializedSchema = helpers.getIndexSchemaManager().getIndexSchema().getInitializedSchema();
+        try (var lease = helpers.indexSearcherManager().leaseSearcher()) {
+            InitializedIndexSchema initializedSchema = helpers.indexSchemaManager().getIndexSchema().getInitializedSchema();
             String keyFieldName = initializedSchema.getKeyFieldName();
             BooleanQuery.Builder builder = new BooleanQuery.Builder();
             builder.setMinimumNumberShouldMatch(1);

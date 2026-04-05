@@ -186,8 +186,8 @@ class CountApiTest {
         when(searcherManager.leaseSearcher()).thenReturn(new IndexSearcherManagerISCH.SearcherLease(searcher, searcherManager));
 
         HandlerHelpers helpers = mock(HandlerHelpers.class);
-        when(helpers.getIndexSchemaManager()).thenReturn(schemaManager);
-        when(helpers.getIndexSearcherManager()).thenReturn(searcherManager);
+        when(helpers.indexSchemaManager()).thenReturn(schemaManager);
+        when(helpers.indexSearcherManager()).thenReturn(searcherManager);
 
         registry = mock(CollectionRegistry.class);
         when(registry.resolveHelpers(anyString())).thenReturn(helpers);

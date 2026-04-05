@@ -131,7 +131,7 @@ class CollectionRegistryTest {
 
         // Write a document so there's data on disk
         HandlerHelpers helpers = registry.resolveHelpers(name);
-        IndexWriter writer = helpers.getIndexWriterManager().acquireWriter();
+        IndexWriter writer = helpers.indexWriterManager().acquireWriter();
         try {
             IndexRequest req = IndexRequest.newBuilder()
                     .addItem(IndexItem.newBuilder()
@@ -139,11 +139,11 @@ class CollectionRegistryTest {
                             .setDocument("{\"id\":\"1\",\"content\":\"hello world\"}")
                             .build())
                     .build();
-            IndexSchema schema = helpers.getIndexSchemaManager().getIndexSchema();
+            IndexSchema schema = helpers.indexSchemaManager().getIndexSchema();
             IndexRequestHandler.processIndexRequests(req, schema, writer, null);
             writer.commit();
         } finally {
-            helpers.getIndexWriterManager().releaseWriter();
+            helpers.indexWriterManager().releaseWriter();
         }
 
         registry.closeCollection(name);
@@ -155,12 +155,12 @@ class CollectionRegistryTest {
 
         // Verify data is preserved by searching
         HandlerHelpers reopenedHelpers = registry.resolveHelpers(name);
-        IndexSearcher searcher = reopenedHelpers.getIndexSearcherManager().acquireSearcher();
+        IndexSearcher searcher = reopenedHelpers.indexSearcherManager().acquireSearcher();
         try {
             int totalHits = searcher.count(new MatchAllDocsQuery());
             assertThat(totalHits).isEqualTo(1);
         } finally {
-            reopenedHelpers.getIndexSearcherManager().releaseSearcher(searcher);
+            reopenedHelpers.indexSearcherManager().releaseSearcher(searcher);
         }
     }
 
@@ -188,7 +188,7 @@ class CollectionRegistryTest {
 
         // Write a document to trigger schema persistence via commit
         HandlerHelpers helpers = registry.resolveHelpers(name);
-        IndexWriter writer = helpers.getIndexWriterManager().acquireWriter();
+        IndexWriter writer = helpers.indexWriterManager().acquireWriter();
         try {
             IndexRequest req = IndexRequest.newBuilder()
                     .addItem(IndexItem.newBuilder()
@@ -196,11 +196,11 @@ class CollectionRegistryTest {
                             .setDocument("{\"id\":\"doc1\",\"content\":\"test content\"}")
                             .build())
                     .build();
-            IndexSchema schema = helpers.getIndexSchemaManager().getIndexSchema();
+            IndexSchema schema = helpers.indexSchemaManager().getIndexSchema();
             IndexRequestHandler.processIndexRequests(req, schema, writer, null);
             writer.commit();
         } finally {
-            helpers.getIndexWriterManager().releaseWriter();
+            helpers.indexWriterManager().releaseWriter();
         }
 
         registry.closeCollection(name);
@@ -211,12 +211,12 @@ class CollectionRegistryTest {
 
         // Verify collection is usable: acquire searcher and search
         HandlerHelpers reopenedHelpers = registry.resolveHelpers(name);
-        IndexSearcher searcher = reopenedHelpers.getIndexSearcherManager().acquireSearcher();
+        IndexSearcher searcher = reopenedHelpers.indexSearcherManager().acquireSearcher();
         try {
             int totalHits = searcher.count(new MatchAllDocsQuery());
             assertThat(totalHits).isEqualTo(1);
         } finally {
-            reopenedHelpers.getIndexSearcherManager().releaseSearcher(searcher);
+            reopenedHelpers.indexSearcherManager().releaseSearcher(searcher);
         }
     }
 

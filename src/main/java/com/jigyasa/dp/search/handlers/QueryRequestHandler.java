@@ -70,8 +70,8 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
     @Override
     public void internalHandle(QueryRequest req, StreamObserver<QueryResponse> observer) {
         HandlerHelpers helpers = registry.resolveHelpers(req.getCollection());
-        try (var lease = helpers.getIndexSearcherManager().leaseSearcher()) {
-            IndexSchema indexSchema = helpers.getIndexSchemaManager().getIndexSchema();
+        try (var lease = helpers.indexSearcherManager().leaseSearcher()) {
+            IndexSchema indexSchema = helpers.indexSchemaManager().getIndexSchema();
             InitializedIndexSchema schema = indexSchema.getInitializedSchema();
             QueryContext context = new QueryContext(req, indexSchema, schema);
 

@@ -47,8 +47,8 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
     @Override
     public void internalHandle(IndexRequest req, StreamObserver<IndexResponse> observer) {
         HandlerHelpers handlerHelpers = registry.resolveHelpers(req.getCollection());
-        try (var lease = handlerHelpers.getIndexWriterManager().leaseWriter()) {
-            IndexSchema indexSchema = handlerHelpers.getIndexSchemaManager().getIndexSchema();
+        try (var lease = handlerHelpers.indexWriterManager().leaseWriter()) {
+            IndexSchema indexSchema = handlerHelpers.indexSchemaManager().getIndexSchema();
             // Index first, then persist to translog. If crash between index and translog,
             // uncommitted Lucene buffer is lost — acceptable (same as ES default durability).
             // Writing translog BEFORE would cause ghost data: if indexing fails (validation error),
@@ -60,7 +60,7 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             boolean hasSuccessfulOps = result.response().getItemResponseList().stream()
                     .anyMatch(s -> s.getCode() == Code.OK_VALUE);
             if (hasSuccessfulOps) {
-                handlerHelpers.getTranslogAppenderManager().getAppender().append(req);
+                handlerHelpers.translogAppenderManager().getAppender().append(req);
             }
 
             // NRT refresh based on client's requested policy
@@ -68,10 +68,10 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
             if (refresh == RefreshPolicy.NONE) {
                 // Fire-and-forget: best throughput for bulk ingestion
             } else if (refresh == RefreshPolicy.IMMEDIATE) {
-                handlerHelpers.getIndexSearcherManager().forceRefresh();
+                handlerHelpers.indexSearcherManager().forceRefresh();
             } else {
                 // WAIT_FOR (default): block until docs are searchable
-                handlerHelpers.getIndexSearcherManager().waitForGeneration(result.maxSeqNo());
+                handlerHelpers.indexSearcherManager().waitForGeneration(result.maxSeqNo());
             }
             observer.onNext(result.response());
             observer.onCompleted();

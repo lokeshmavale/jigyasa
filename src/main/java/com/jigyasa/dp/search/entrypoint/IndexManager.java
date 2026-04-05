@@ -125,10 +125,10 @@ public class IndexManager {
     public void forceMerge(ForceMergeRequest req, StreamObserver<ForceMergeResponse> observer) {
         try {
             var helpers = registry.resolveHelpers(req.getCollection());
-            var writerManager = helpers.getIndexWriterManager();
+            var writerManager = helpers.indexWriterManager();
             // Snapshot segment count before merge
             int segsBefore = 0;
-            var searcherMgr = helpers.getIndexSearcherManager();
+            var searcherMgr = helpers.indexSearcherManager();
             var preMergeSearcher = searcherMgr.acquireSearcher();
             try {
                 if (preMergeSearcher.getIndexReader() instanceof org.apache.lucene.index.DirectoryReader dr) {
@@ -175,8 +175,8 @@ public class IndexManager {
     public void count(CountRequest req, StreamObserver<CountResponse> observer) {
         try {
             var helpers = registry.resolveHelpers(req.getCollection());
-            var schema = helpers.getIndexSchemaManager().getIndexSchema().getInitializedSchema();
-            var searcherManager = helpers.getIndexSearcherManager();
+            var schema = helpers.indexSchemaManager().getIndexSchema().getInitializedSchema();
+            var searcherManager = helpers.indexSearcherManager();
             var searcher = searcherManager.acquireSearcher();
             try {
                 // Build filter query (same as Query RPC filters)

@@ -48,9 +48,9 @@ class DeleteByQueryRequestHandlerTest {
         schemaManager = mock(IndexSchemaManager.class);
         indexWriter = mock(IndexWriter.class);
 
-        when(helpers.getIndexWriterManager()).thenReturn(writerManager);
-        when(helpers.getIndexSearcherManager()).thenReturn(searcherManager);
-        when(helpers.getIndexSchemaManager()).thenReturn(schemaManager);
+        when(helpers.indexWriterManager()).thenReturn(writerManager);
+        when(helpers.indexSearcherManager()).thenReturn(searcherManager);
+        when(helpers.indexSchemaManager()).thenReturn(schemaManager);
         when(writerManager.acquireWriter()).thenReturn(indexWriter);
         when(writerManager.leaseWriter()).thenReturn(new IndexWriterManagerISCH.WriterLease(indexWriter, writerManager));
         when(indexWriter.getMaxCompletedSequenceNumber()).thenReturn(42L);
@@ -58,7 +58,7 @@ class DeleteByQueryRequestHandlerTest {
         // Mock translog for commit+reset after delete-by-query
         TranslogAppenderManager translogManager = mock(TranslogAppenderManager.class);
         com.jigyasa.dp.search.handlers.translog.TranslogAppender translogAppender = mock(com.jigyasa.dp.search.handlers.translog.TranslogAppender.class);
-        when(helpers.getTranslogAppenderManager()).thenReturn(translogManager);
+        when(helpers.translogAppenderManager()).thenReturn(translogManager);
         when(translogManager.getAppender()).thenReturn(translogAppender);
 
         // Set up a schema with a filterable string field "status"
