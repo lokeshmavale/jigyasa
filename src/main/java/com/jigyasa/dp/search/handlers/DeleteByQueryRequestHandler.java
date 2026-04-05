@@ -59,8 +59,15 @@ public class DeleteByQueryRequestHandler extends RequestHandlerBase<DeleteByQuer
             // Force commit to make delete durable — delete-by-query is not translog'd,
             // so without commit, crash before next periodic commit would resurrect deleted docs.
             lease.writer().commit();
-            // Reset translog so recovery doesn't replay index ops that would re-add deleted docs
-            helpers.getTranslogAppenderManager().getAppender().reset();
+            // Reset translog so recovery doesn't replay index ops that would re-add deleted docs.
+            // If reset fails, log error but still return success — the commit is durable and
+            // the periodic commit thread will reset translog on its next successful cycle.
+            try {
+                helpers.getTranslogAppenderManager().getAppender().reset();
+            } catch (Exception resetEx) {
+                log.error("Translog reset failed after delete-by-query commit; " +
+                        "periodic commit will clean up on next cycle", resetEx);
+            }
             log.info("DeleteByQuery executed and committed, seqNo={}", seqNo);
             helpers.getIndexSearcherManager().waitForGeneration(seqNo);
             observer.onNext(DeleteByQueryResponse.newBuilder()

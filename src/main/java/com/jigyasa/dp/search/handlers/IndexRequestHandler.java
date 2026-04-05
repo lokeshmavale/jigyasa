@@ -196,7 +196,13 @@ public class IndexRequestHandler extends RequestHandlerBase<IndexRequest, IndexR
     private static Set<String> getUniqueDocKeysForRequest(List<IndexRequestContext> requestContexts,
                                                           InitializedIndexSchema indexSchema) {
         final String keyFieldName = indexSchema.getKeyFieldName();
-        return requestContexts.stream().map(context -> context.parsedDocument.get(keyFieldName).asText()).collect(Collectors.toSet());
+        return requestContexts.stream().map(context -> {
+            JsonNode keyNode = context.parsedDocument.get(keyFieldName);
+            if (keyNode == null || keyNode.isNull()) {
+                throw new IllegalArgumentException("Missing required key field: " + keyFieldName);
+            }
+            return keyNode.asText();
+        }).collect(Collectors.toSet());
     }
 
     public record IndexRequestContext(IndexItem item, JsonNode parsedDocument) {
