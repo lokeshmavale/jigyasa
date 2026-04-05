@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Exclude generated protobuf/gRPC stubs -->
+    <Match>
+        <Package name="~com\.jigyasa\.dp\.search\.protocol.*"/>
+    </Match>
+
+    <!-- Suppress serialization warnings (we don't use Java serialization) -->
+    <Match>
+        <Bug pattern="SE_BAD_FIELD,SE_NO_SERIALVERSIONID,SE_TRANSIENT_FIELD_NOT_RESTORED"/>
+    </Match>
+
+    <!-- Suppress EI_EXPOSE_REP/REP2 for internal holder/wiring classes, records, and DTOs
+         where mutable sharing is intentional and callers are trusted.
+         NOT suppressed globally — each class is explicitly listed with rationale. -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Or>
+            <!-- Internal wiring: components share references by design -->
+            <Class name="com.jigyasa.dp.search.models.HandlerHelpers"/>
+            <Class name="com.jigyasa.dp.search.handlers.RecoveryCommitServiceISCH"/>
+            <Class name="com.jigyasa.dp.search.handlers.TtlSweeperService"/>
+            <Class name="com.jigyasa.dp.search.handlers.IndexWriterManagerISCH"/>
+            <Class name="com.jigyasa.dp.search.handlers.TranslogAppenderManager"/>
+            <Class name="com.jigyasa.dp.search.models.IndexSchemaManager"/>
+            <Class name="com.jigyasa.dp.search.collections.CollectionContext"/>
+            <Class name="com.jigyasa.dp.search.utils.DocIdOverlapLock$UniqueIdsPerRequest"/>
+            <!-- Records: immutable by convention, fields are intentionally exposed -->
+            <Class name="com.jigyasa.dp.search.handlers.IndexWriterManagerISCH$WriterLease"/>
+            <Class name="com.jigyasa.dp.search.handlers.IndexSearcherManagerISCH$SearcherLease"/>
+            <Class name="com.jigyasa.dp.search.handlers.IndexRequestHandler$IndexResult"/>
+            <Class name="com.jigyasa.dp.search.handlers.IndexRequestHandler$IndexRequestContext"/>
+            <Class name="com.jigyasa.dp.search.query.QueryContext"/>
+            <!-- Lombok @Getter on schema objects: treated as read-only after publication -->
+            <Class name="com.jigyasa.dp.search.models.IndexSchema"/>
+            <Class name="com.jigyasa.dp.search.models.InitializedIndexSchema"/>
+            <!-- PerFieldAnalyzer: returns analyzer map, callers don't mutate -->
+            <Class name="com.jigyasa.dp.search.text.PerFieldAnalyzer"/>
+            <!-- SourceVisitor: binaryField stores ref from Lucene; getSrc() returns clone -->
+            <Class name="com.jigyasa.dp.search.utils.SourceVisitor"/>
+        </Or>
+    </Match>
+
+    <!-- FileAppender constructor legitimately throws on invalid paths/permissions -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+        <Class name="com.jigyasa.dp.search.handlers.translog.FileAppender"/>
+    </Match>
+
+    <!-- acquireWriter: lock paths are correct but SpotBugs can't trace
+         the unlock-before-reinit / relock-after pattern across method calls -->
+    <Match>
+        <Bug pattern="UL_UNRELEASED_LOCK"/>
+        <Class name="com.jigyasa.dp.search.handlers.IndexWriterManagerISCH"/>
+        <Method name="acquireWriter"/>
+    </Match>
+
+    <!-- Anonymous SourceVisitor class — method is called by Lucene's StoredFieldVisitor -->
+    <Match>
+        <Bug pattern="UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS"/>
+    </Match>
+</FindBugsFilter>

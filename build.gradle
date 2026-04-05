@@ -8,6 +8,7 @@ plugins {
     id 'jvm-test-suite'
     id 'application'
     id 'me.champeau.jmh' version '0.7.3'
+    id 'com.github.spotbugs' version '6.1.3'
 }
 
 application {
@@ -133,3 +134,22 @@ jmh {
     failOnError = true
     jvmArgs = ['--add-modules', 'jdk.incubator.vector']
 }
+
+// --- SpotBugs static analysis ---
+spotbugs {
+    toolVersion = '4.8.6'
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('MEDIUM')
+    excludeFilter = file("$rootDir/spotbugs-exclude.xml")
+}
+
+spotbugsMain {
+    reports {
+        html.required = true
+        xml.required = true
+    }
+}
+
+// Don't run SpotBugs on test code or generated proto stubs
+spotbugsTest.enabled = false
+spotbugsJmh.enabled = false

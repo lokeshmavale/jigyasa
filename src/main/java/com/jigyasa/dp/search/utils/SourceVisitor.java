@@ -1,13 +1,15 @@
 package com.jigyasa.dp.search.utils;
 
 import com.jigyasa.dp.search.models.mappers.FieldMapperStrategy;
-import lombok.Getter;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.StoredFieldVisitor;
 
 public class SourceVisitor extends StoredFieldVisitor {
-    @Getter
-    byte[] src;
+    private byte[] src;
+
+    public byte[] getSrc() {
+        return src != null ? src.clone() : null;
+    }
 
     @Override
     public void binaryField(FieldInfo fieldInfo, byte[] value) {

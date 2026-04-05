@@ -84,6 +84,11 @@ public class FileAppender implements TranslogAppender {
                 log.info("Translog FileAppender initialized at {} (REQUEST durability, fsync per request)", dir);
             }
         } catch (Exception e) {
+            // Clean up any resources opened before the failure (e.g., file streams from openNewFile)
+            closeOpenFiles();
+            if (flushScheduler != null) {
+                flushScheduler.shutdownNow();
+            }
             throw new RuntimeException("Failed to initialize file appender at " + dir, e);
         }
     }
