@@ -12,4 +12,7 @@ public interface TranslogAppender {
     void reset();
 
     List<IndexRequest> getData();
+
+    /** Release resources (file handles, flush threads). Called during collection shutdown. */
+    default void shutdown() {}
 }

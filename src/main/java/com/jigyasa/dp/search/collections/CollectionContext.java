@@ -6,7 +6,6 @@ import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
 import com.jigyasa.dp.search.handlers.RecoveryCommitServiceISCH;
 import com.jigyasa.dp.search.handlers.TranslogAppenderManager;
 import com.jigyasa.dp.search.handlers.TtlSweeperService;
-import com.jigyasa.dp.search.handlers.translog.FileAppender;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.IndexSchemaManager;
 import com.jigyasa.dp.search.models.ServerMode;
@@ -117,8 +116,8 @@ public class CollectionContext {
         }
         try {
             TranslogAppenderManager tam = helpers.translogAppenderManager();
-            if (tam.getAppender() instanceof FileAppender fa) {
-                fa.shutdown();
+            if (tam.getAppender() != null) {
+                tam.getAppender().shutdown();
             }
         } catch (Exception e) {
             log.error("Error shutting down translog appender for collection '{}'", name, e);

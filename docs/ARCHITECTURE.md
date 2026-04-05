@@ -17,6 +17,22 @@ gRPC Server (50051)
              └─ Apache Lucene 10.4
 ```
 
+## Startup & Bootstrap
+
+On startup, `Main.java` runs `BootstrapChecks` before initializing the server:
+
+1. **Heap size check** — warns if < 512MB (recommend ≥ 512MB for production)
+2. **Memory lock** — if `BOOTSTRAP_MEMORY_LOCK=true`, calls `mlockall()` on Linux/macOS or `VirtualLock` on Windows via JNA. Pins JVM heap to physical RAM, preventing swap-induced GC spikes.
+3. **AlwaysPreTouch check** — warns if `-XX:+AlwaysPreTouch` JVM flag is missing
+
+### gRPC Thread Model
+
+The gRPC server uses a split I/O + handler architecture:
+
+- **NIO Event Loop** (2 threads) — handles TCP accept/read/write only
+- **Handler Executor** (fixed thread pool, CPU count) — executes Lucene search/index operations
+- This separation prevents CPU-bound Lucene operations from blocking I/O threads
+
 ## Component Overview
 
 ### gRPC Layer

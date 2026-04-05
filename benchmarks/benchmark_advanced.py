@@ -27,6 +27,10 @@ COLLECTION = "bench_advanced"
 ES_INDEX = "bench_advanced"
 NUM_DOCS = 10000
 
+# Resource allocation: N GB container memory, N/2 heap for both engines
+CONTAINER_MEMORY_GB = 4
+HEAP_SIZE_MB = (CONTAINER_MEMORY_GB * 1024) // 2  # N/2 rule: leave room for off-heap (Lucene mmaps, netty buffers)
+
 # ---- Data generation (same seed as benchmark_comparison.py) ----
 random.seed(42)
 
@@ -190,12 +194,19 @@ def run_concurrent_benchmark(name, query_func, thread_counts, duration_sec=10):
 # ============================================================
 def measure_cold_start_jigyasa():
     """Start Jigyasa JAR and measure time until gRPC port responds."""
-    jar = os.path.join(os.path.dirname(__file__), "build", "libs", "Jigyasa-1.0-SNAPSHOT-all.jar")
+    jar = os.path.join(os.path.dirname(__file__), "..", "build", "libs", "Jigyasa-1.0-SNAPSHOT-all.jar")
+    if not os.path.exists(jar):
+        print(f"    SKIP: JAR not found at {jar}")
+        return None
+    env = os.environ.copy()
+    env["BOOTSTRAP_MEMORY_LOCK"] = "true"
     start = time.perf_counter()
     proc = subprocess.Popen(
-        ["java", "-jar", jar],
+        ["java", f"-Xms{HEAP_SIZE_MB}m", f"-Xmx{HEAP_SIZE_MB}m",
+         "-XX:+AlwaysPreTouch", "-jar", jar],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        cwd=os.path.dirname(__file__)
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+        env=env
     )
     # Poll until gRPC port is ready
     import socket
@@ -466,7 +477,7 @@ def main():
     print("  BENCHMARK 3: RESOURCE FOOTPRINT")
     print("=" * 90)
 
-    jar_path = os.path.join(os.path.dirname(__file__), "build", "libs", "Jigyasa-1.0-SNAPSHOT-all.jar")
+    jar_path = os.path.join(os.path.dirname(__file__), "..", "build", "libs", "Jigyasa-1.0-SNAPSHOT-all.jar")
     jar_size = os.path.getsize(jar_path) / (1024 * 1024)
 
     # ES Docker image size

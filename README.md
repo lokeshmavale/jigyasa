@@ -76,7 +76,8 @@ resp = stub.Query(pb.QueryRequest(collection="memories", text_query="dark mode",
 
 ```bash
 ./gradlew build                                        # compile + test
-./gradlew test                                         # 191 tests
+./gradlew test                                         # 200 tests
+./gradlew spotbugsMain                                 # Static analysis (0 bugs)
 python smoke_test.py                                   # e2e against running server
 
 # Run any Java example (server must be running)

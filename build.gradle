@@ -13,6 +13,10 @@ plugins {
 
 application {
     mainClass = 'com.jigyasa.dp.search.entrypoint.Main'
+    // Production JVM flags:
+    // -XX:+AlwaysPreTouch pre-faults heap pages into RAM (prevents swap-induced GC spikes)
+    // --add-modules jdk.incubator.vector enables SIMD acceleration for vector search
+    applicationDefaultJvmArgs = ['-XX:+AlwaysPreTouch', '--add-modules', 'jdk.incubator.vector']
 }
 
 // --- Version Catalog ---
@@ -65,6 +69,10 @@ dependencies {
     // --- Serialization ---
     implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVer}"
     implementation 'com.google.code.gson:gson:2.11.0'
+
+    // --- Native access (memory locking via mlockall/VirtualLock) ---
+    implementation 'net.java.dev.jna:jna:5.16.0'
+    implementation 'net.java.dev.jna:jna-platform:5.16.0'
 
     // --- Utilities ---
     implementation 'org.apache.commons:commons-lang3:3.17.0'

@@ -18,9 +18,7 @@ import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Constructs the base Lucene Query from a QueryRequest.
@@ -33,9 +31,6 @@ import java.util.Map;
  * search the wrong vector space, returning fewer than k results.
  */
 public class BaseQueryBuilder {
-
-    private static final ThreadLocal<Map<String, QueryParser>> PARSER_CACHE =
-            ThreadLocal.withInitial(HashMap::new);
 
     public Query build(QueryContext context) {
         QueryRequest req = context.request();
@@ -135,7 +130,6 @@ public class BaseQueryBuilder {
     static Query buildQueryString(String queryString, String defaultField, InitializedIndexSchema schema) {
         String field = defaultField;
         if (field == null || field.isEmpty()) {
-            // Use first searchable field as default
             field = schema.getFieldLookupMap().values().stream()
                     .filter(sf -> sf.isSearchable() && isTextField(sf.getType()))
                     .map(SchemaField::getName)
@@ -143,8 +137,9 @@ public class BaseQueryBuilder {
                     .orElseThrow(() -> new IllegalArgumentException("No searchable text field in schema for query_string"));
         }
         try {
-            Map<String, QueryParser> cache = PARSER_CACHE.get();
-            QueryParser parser = cache.computeIfAbsent(field, f -> new QueryParser(f, schema.getSearchAnalyzer()));
+            // Create fresh parser each time — schema (and its analyzer) can change at runtime.
+            // QueryParser construction is cheap; the analysis cost dominates parsing.
+            QueryParser parser = new QueryParser(field, schema.getSearchAnalyzer());
             parser.setAllowLeadingWildcard(false);
             return parser.parse(queryString);
         } catch (org.apache.lucene.queryparser.classic.ParseException e) {

@@ -12,6 +12,7 @@ public class Main {
 
     public static void main(String[] args) {
         try {
+            BootstrapChecks.run();
             Injector injector = Guice.createInjector(new ServiceModules(), new ConfigSupplierModule());
             GrpcServerWrapper server = injector.getInstance(GrpcServerWrapper.class);
             server.start();

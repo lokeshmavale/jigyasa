@@ -17,11 +17,17 @@ import com.jigyasa.dp.search.handlers.UpdateSchemaRequestHandler;
 import com.jigyasa.dp.search.models.ServerMode;
 import com.jigyasa.dp.search.utils.DocIdOverlapLock;
 import io.grpc.Server;
-import io.grpc.ServerBuilder;
+import io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceModules extends AbstractModule {
 
@@ -29,7 +35,28 @@ public class ServiceModules extends AbstractModule {
     @Singleton
     public Server provideGrpcServer(AnweshanDataPlaneImpl anweshanDataPlaneService,
                                     @Named("GrpcServerPort") String port) {
-        return ServerBuilder.forPort(Integer.parseInt(port))
+        int cpus = Runtime.getRuntime().availableProcessors();
+
+        // Netty event loop for I/O only (accept + read/write) — 2 threads is sufficient
+        // since Jigyasa is single-node and gRPC multiplexes over few TCP connections.
+        NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup(2,
+                new DefaultThreadFactory("jigyasa-io", true));
+
+        // Dedicated fixed thread pool for handler execution — sized to CPU count.
+        // Handlers perform CPU-bound Lucene operations (1-5ms), so we isolate them
+        // from I/O threads to prevent head-of-line blocking at higher concurrency.
+        ExecutorService handlerExecutor = Executors.newFixedThreadPool(cpus,
+                new DefaultThreadFactory("jigyasa-handler", true));
+
+        return NettyServerBuilder.forPort(Integer.parseInt(port))
+                .executor(handlerExecutor)
+                .bossEventLoopGroup(eventLoopGroup)
+                .workerEventLoopGroup(eventLoopGroup)
+                .channelType(NioServerSocketChannel.class)
+                .maxInboundMessageSize(64 * 1024 * 1024)
+                .keepAliveTime(5, TimeUnit.MINUTES)
+                .keepAliveTimeout(20, TimeUnit.SECONDS)
+                .permitKeepAliveWithoutCalls(true)
                 .addService(ProtoReflectionService.newInstance())
                 .addService(anweshanDataPlaneService)
                 .build();

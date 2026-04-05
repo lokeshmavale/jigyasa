@@ -68,8 +68,11 @@ public class FileAppender implements TranslogAppender {
         try {
             this.dir = dir;
             this.durability = durability;
-            openNewFile();
+            // Load checkpoint BEFORE opening file — checkpoint tells us which file to continue from.
+            // Without this, restart always opens file 0, corrupting append order after rollover.
+            Files.createDirectories(Path.of(dir));
             loadCheckpoint();
+            openNewFile();
 
             if (durability == Durability.ASYNC) {
                 flushScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -138,7 +141,10 @@ public class FileAppender implements TranslogAppender {
                 int fileNum = dis.readInt();
                 totalOps.set(syncedOps);
                 totalBytesWritten = syncedBytes;
-                log.info("Loaded translog checkpoint: {} ops, {} bytes, file {}", syncedOps, syncedBytes, fileNum);
+                // Resume from the correct file number after rollover.
+                // Without this, restart always opens file 0, corrupting append ordering.
+                currentFileNumber = fileNum + 1;
+                log.info("Loaded translog checkpoint: {} ops, {} bytes, resuming from file {}", syncedOps, syncedBytes, currentFileNumber);
             } catch (IOException e) {
                 log.warn("Failed to load translog checkpoint, will replay all entries", e);
             }

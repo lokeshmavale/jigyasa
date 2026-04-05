@@ -180,7 +180,7 @@ Jigyasa supports **42 built-in analyzers** powered by Apache Lucene. You can set
   "indexAnalyzer": "lucene.en", "searchAnalyzer": "lucene.en" }
 ```
 
-> 📖 Full analyzer list and behavior: [Apache Lucene Analysis documentation](https://lucene.apache.org/core/10_0_0/analysis/common/index.html)
+> 📖 Full analyzer list and behavior: [Apache Lucene Analysis documentation](https://lucene.apache.org/core/10_4_0/analysis/common/index.html)
 
 📂 Source: [`examples/01-schema-and-indexing/`](examples/01-schema-and-indexing/)  
 📂 Source: [`examples/07-multi-language-analyzers/`](examples/07-multi-language-analyzers/)
@@ -510,6 +510,23 @@ All configuration is via environment variables:
 | `RAM_BUFFER_SIZE_MB` | `256` | Lucene in-memory buffer before flush |
 | `NRT_REFRESH_INTERVAL_MS` | `25` | Near-real-time refresh interval |
 | `TTL_SWEEP_INTERVAL_MS` | `30000` | TTL expiry sweep interval |
+| `BOOTSTRAP_MEMORY_LOCK` | (not set) | Set to `true` to enable native memory locking (mlockall/VirtualLock) |
+
+### Memory Lock (like ES `bootstrap.memory_lock`)
+
+Prevents the OS from swapping JVM heap pages to disk. Without this, GC pauses can spike from milliseconds to seconds under memory pressure.
+
+```bash
+# Linux
+ulimit -l unlimited
+export BOOTSTRAP_MEMORY_LOCK=true
+java -Xms1g -Xmx1g -XX:+AlwaysPreTouch -jar jigyasa.jar
+
+# Windows
+# Grant "Lock pages in memory" privilege in Local Security Policy
+set BOOTSTRAP_MEMORY_LOCK=true
+java -Xms1g -Xmx1g -XX:+AlwaysPreTouch -jar jigyasa.jar
+```
 
 ### Docker Deployment
 
@@ -635,4 +652,4 @@ service JigyasaDataPlaneService { ... }
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component deep dive |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | Full config & API reference |
 | [docs/AGENT_INTEGRATION_GUIDE.md](docs/AGENT_INTEGRATION_GUIDE.md) | AI agent patterns & schemas |
-| [Apache Lucene Analysis](https://lucene.apache.org/core/10_0_0/analysis/common/index.html) | 42 analyzer behaviors |
+| [Apache Lucene Analysis](https://lucene.apache.org/core/10_4_0/analysis/common/index.html) | 42 analyzer behaviors |

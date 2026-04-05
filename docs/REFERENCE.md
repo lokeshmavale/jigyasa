@@ -16,6 +16,7 @@ All configuration via environment variables:
 | `USE_COMPOUND_FILE` | `false` | Merge into compound files (slower writes, fewer FDs) |
 | `MERGE_MAX_THREADS` | `2` | Concurrent merge threads |
 | `MERGE_MAX_MERGE_COUNT` | `4` | Max concurrent merges |
+| `BOOTSTRAP_MEMORY_LOCK` | (not set) | Set to `true` to enable native memory locking (mlockall/VirtualLock). Requires `ulimit -l unlimited` on Linux. |
 
 ## Data Storage
 
@@ -120,7 +121,7 @@ For zero-downtime snapshots, use filesystem-level snapshots (ZFS, LVM, EBS snaps
 
 ### Analyzers
 
-Jigyasa supports **42 built-in analyzers** — 4 generic plus 38 language-specific from [Apache Lucene's analysis modules](https://lucene.apache.org/core/10_1_0/analysis/common/index.html). Set per-field via `indexAnalyzer` and `searchAnalyzer` in the schema:
+Jigyasa supports **42 built-in analyzers** — 4 generic plus 38 language-specific from [Apache Lucene's analysis modules](https://lucene.apache.org/core/10_4_0/analysis/common/index.html). Set per-field via `indexAnalyzer` and `searchAnalyzer` in the schema:
 
 ```json
 {"name": "title_fr", "type": "STRING", "searchable": true,
@@ -137,7 +138,7 @@ Jigyasa supports **42 built-in analyzers** — 4 generic plus 38 language-specif
 
 **Language codes:** `ar` `hy` `eu` `bn` `br` `bg` `ca` `cjk` `cs` `da` `nl` `en` `et` `fi` `fr` `gl` `de` `el` `hi` `hu` `id` `ga` `it` `lv` `lt` `no` `fa` `pl` `pt` `ro` `ru` `sr` `ckb` `es` `sv` `th` `tr` `uk`
 
-For detailed analyzer behavior, see the [Lucene Analysis documentation](https://lucene.apache.org/core/10_1_0/analysis/common/index.html). For a working example, see [Example 07 — Multi-Language Analyzers](../examples/07-multi-language-analyzers/).
+For detailed analyzer behavior, see the [Lucene Analysis documentation](https://lucene.apache.org/core/10_4_0/analysis/common/index.html). For a working example, see [Example 07 — Multi-Language Analyzers](../examples/07-multi-language-analyzers/).
 
 ## API Reference
 
@@ -217,3 +218,21 @@ All benchmarks run against **Elasticsearch 8.13.0** on the same machine, same da
 | Translog async interval | 200 ms | Periodic fsync when `TRANSLOG_DURABILITY=async` |
 | QueryParser cache | ThreadLocal per field | Avoid per-query allocation |
 | HNSW | maxConn=16, beamWidth=100 | Good recall/speed tradeoff |
+
+### Production JVM Flags
+
+| Flag | Purpose |
+|------|---------|
+| `-XX:+AlwaysPreTouch` | Pre-faults all heap pages at startup — ensures heap is resident in physical RAM |
+| `--add-modules jdk.incubator.vector` | Enables SIMD vector acceleration for HNSW KNN search |
+| `-Xms` / `-Xmx` | Set to N/2 of available memory (leave room for Lucene off-heap mmaps) |
+
+### gRPC Server Tuning
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| I/O Event Loops | 2 threads | Netty NIO — handles TCP accept/read/write |
+| Handler Executor | CPU count | Fixed thread pool — executes Lucene operations |
+| Max inbound message | 64 MB | Max size of a single gRPC request (e.g., large batch index) |
+| Keep-alive time | 5 minutes | Server-side connection keep-alive interval |
+| Keep-alive timeout | 20 seconds | Timeout for keep-alive ping response |
