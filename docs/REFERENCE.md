@@ -223,9 +223,13 @@ All benchmarks run against **Elasticsearch 8.13.0** on the same machine, same da
 
 | Flag | Purpose |
 |------|---------|
+| `--add-modules jdk.incubator.vector` | **Required for SIMD.** Enables Lucene's `PanamaVectorizationProvider` for 512-bit SIMD vector distance computations (dot product, cosine, euclidean). Without this, HNSW falls back to scalar math. |
+| `-Dlucene.useScalarFMA=true` | Enable CPU FMA (Fused Multiply-Add) for scalar distance operations |
+| `-Dlucene.useVectorFMA=true` | Enable FMA for SIMD distance operations. Both default to `auto`; set `true` to force-enable on known-good hardware. |
 | `-XX:+AlwaysPreTouch` | Pre-faults all heap pages at startup — ensures heap is resident in physical RAM |
-| `--add-modules jdk.incubator.vector` | Enables SIMD vector acceleration for HNSW KNN search |
 | `-Xms` / `-Xmx` | Set to N/2 of available memory (leave room for Lucene off-heap mmaps) |
+
+> **Launcher scripts:** Use `jigyasa.sh` (Linux/macOS) or `jigyasa.bat` (Windows) to launch with all production flags pre-configured. These set SIMD, FMA, AlwaysPreTouch, and heap sizing automatically.
 
 ### gRPC Server Tuning
 

@@ -41,12 +41,19 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 ## Quick Start
 
 ```bash
-# Start the server
+# Start the server (with SIMD + memory optimization)
 ./gradlew run                                          # → localhost:50051
 
-# Or build a fat JAR
+# Or build a fat JAR and use the launcher script
 ./gradlew shadowJar
-java -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar      # → localhost:50051
+./jigyasa.sh                                           # Linux/macOS (all prod flags)
+jigyasa.bat                                            # Windows (all prod flags)
+
+# Or launch manually with full optimization
+java --add-modules jdk.incubator.vector \
+     -Dlucene.useScalarFMA=true -Dlucene.useVectorFMA=true \
+     -XX:+AlwaysPreTouch -Xms1g -Xmx1g \
+     -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar
 
 # Docker
 docker compose up -d

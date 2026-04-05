@@ -24,6 +24,7 @@ On startup, `Main.java` runs `BootstrapChecks` before initializing the server:
 1. **Heap size check** — warns if < 512MB (recommend ≥ 512MB for production)
 2. **Memory lock** — if `BOOTSTRAP_MEMORY_LOCK=true`, calls `mlockall()` on Linux/macOS or `VirtualLock` on Windows via JNA. Pins JVM heap to physical RAM, preventing swap-induced GC spikes.
 3. **AlwaysPreTouch check** — warns if `-XX:+AlwaysPreTouch` JVM flag is missing
+4. **SIMD vectorization check** — verifies `jdk.incubator.vector` module is active. Lucene uses this for 512-bit SIMD distance computations (dot product, cosine similarity) during HNSW graph traversal. Without it, vector search falls back to scalar math (4-8x slower at high dimensions). Also logs FMA (Fused Multiply-Add) settings (`lucene.useScalarFMA`, `lucene.useVectorFMA`).
 
 ### gRPC Thread Model
 

@@ -520,13 +520,32 @@ Prevents the OS from swapping JVM heap pages to disk. Without this, GC pauses ca
 # Linux
 ulimit -l unlimited
 export BOOTSTRAP_MEMORY_LOCK=true
-java -Xms1g -Xmx1g -XX:+AlwaysPreTouch -jar jigyasa.jar
+java -Xms1g -Xmx1g --add-modules jdk.incubator.vector \
+     -Dlucene.useScalarFMA=true -Dlucene.useVectorFMA=true \
+     -XX:+AlwaysPreTouch -jar jigyasa.jar
 
 # Windows
-# Grant "Lock pages in memory" privilege in Local Security Policy
 set BOOTSTRAP_MEMORY_LOCK=true
-java -Xms1g -Xmx1g -XX:+AlwaysPreTouch -jar jigyasa.jar
+java -Xms1g -Xmx1g --add-modules jdk.incubator.vector ^
+     -Dlucene.useScalarFMA=true -Dlucene.useVectorFMA=true ^
+     -XX:+AlwaysPreTouch -jar jigyasa.jar
+
+# Or use the launcher scripts (all flags pre-configured):
+./jigyasa.sh          # Linux/macOS
+jigyasa.bat           # Windows
 ```
+
+### SIMD Vector Acceleration
+
+Lucene 10.4 uses `jdk.incubator.vector` (Panama Vector API) for **512-bit SIMD** distance computations during HNSW graph traversal. This accelerates dot product, cosine similarity, and euclidean distance by processing 16 floats per CPU instruction.
+
+| Setting | Flag | Effect |
+|---------|------|--------|
+| SIMD module | `--add-modules jdk.incubator.vector` | Enables `PanamaVectorizationProvider` (512-bit SIMD) |
+| Scalar FMA | `-Dlucene.useScalarFMA=true` | Fused Multiply-Add for scalar ops |
+| Vector FMA | `-Dlucene.useVectorFMA=true` | FMA for SIMD ops |
+
+> **Bootstrap check:** Jigyasa warns at startup if the SIMD module is not active. Check logs for `SIMD vectorization enabled` to confirm.
 
 ### Docker Deployment
 
@@ -556,9 +575,6 @@ TRANSLOG_FLUSH_INTERVAL_MS=1000 # 1s fsync interval
 # Low-latency search
 NRT_REFRESH_INTERVAL_MS=10      # 10ms refresh
 RAM_BUFFER_SIZE_MB=128          # Smaller buffer = faster NRT
-
-# Add JVM vector optimization
-java --add-modules jdk.incubator.vector -jar jigyasa.jar
 ```
 
 ### Monitoring
