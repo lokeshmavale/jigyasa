@@ -47,3 +47,11 @@ build/
 IndexData/
 TransLog/
 _gen/
+
+### Python ###
+__pycache__/
+*.pyc
+benchmarks/test-data/gen/
+
+### Locust output ###
+locust_results*
