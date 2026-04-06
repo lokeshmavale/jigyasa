@@ -50,7 +50,7 @@ REST + JSON over HTTP            gRPC (binary, typed)
 
 ```
 Client (gRPC) ──→ GrpcServer:50051
-                   └─ 13 RPCs → Handler Layer
+                   └─ 12 RPCs → Handler Layer
                       └─ CollectionRegistry
                          └─ CollectionContext (per collection)
                             ├─ IndexWriterManager  (write path)
@@ -160,7 +160,7 @@ Every collection needs a **schema** — a JSON definition of fields, their types
     { "name": "tags",        "type": "STRING_COLLECTION", "filterable": true },
     { "name": "location",    "type": "GEO_POINT", "filterable": true, "sortable": true },
     { "name": "embedding",   "type": "VECTOR",  "searchable": true,
-      "vectorDimension": 128, "vectorSimilarity": "COSINE" }
+      "dimension": 128, "similarityFunction": "COSINE" }
   ],
   "hnswConfig": { "maxConn": 16, "beamWidth": 100 },
   "ttlEnabled": false
@@ -276,7 +276,7 @@ FilterClause.newBuilder()
 
 // 7. Range filter — numeric/string ranges
     .setRangeFilter(RangeFilter.newBuilder()
-        .setGte("20.0").setLte("100.0"))
+        .setMin("20.0").setMax("100.0"))
 
 // 8. Geo distance — within radius of a point
     .setGeoDistanceFilter(GeoDistanceFilter.newBuilder()
@@ -464,7 +464,7 @@ Jigyasa was designed as a **drop-in replacement for SQLite** in AI agent framewo
     { "name": "role",        "type": "STRING", "filterable": true },
     { "name": "content",     "type": "STRING", "searchable": true },
     { "name": "embedding",   "type": "VECTOR", "searchable": true,
-      "vectorDimension": 1536, "vectorSimilarity": "COSINE" },
+      "dimension": 1536, "similarityFunction": "COSINE" },
     { "name": "timestamp",   "type": "INT64", "filterable": true, "sortable": true }
   ],
   "ttlEnabled": true,
@@ -481,7 +481,7 @@ Jigyasa was designed as a **drop-in replacement for SQLite** in AI agent framewo
     { "name": "title",      "type": "STRING",  "searchable": true },
     { "name": "body",       "type": "STRING",  "searchable": true },
     { "name": "embedding",  "type": "VECTOR",  "searchable": true,
-      "vectorDimension": 1536, "vectorSimilarity": "COSINE" },
+      "dimension": 1536, "similarityFunction": "COSINE" },
     { "name": "tags",       "type": "STRING_COLLECTION", "filterable": true },
     { "name": "confidence", "type": "DOUBLE",  "filterable": true, "sortable": true }
   ],
@@ -594,29 +594,33 @@ grpcurl -plaintext localhost:50051 jigyasa_dp_search.JigyasaDataPlaneService/Hea
 
 ```bash
 cd benchmarks/
-pip install grpcio grpcio-tools
+pip install grpcio grpcio-tools locust
 
-# Core benchmark (10K docs, all query types)
+# 1M doc head-to-head (Jigyasa vs ES in Linux containers)
+python benchmark_1m_sequential.py
+
+# Core benchmark (10K docs, all query types, quick)
 python benchmark.py
 
-# Advanced benchmark (concurrent load, Jigyasa vs ES comparison)
-python benchmark_advanced.py
+# Concurrent load test with Locust (50 users, 60s)
+locust -f ../locustfile.py --headless -u 50 -r 10 -t 60s --host=localhost:50051
 
-# Scale benchmark (variable dataset sizes)
-python benchmark_scale.py
+# Vector search benchmark (SIMD vs scalar)
+python benchmark_vector.py
 ```
 
-### Reference Numbers (10K docs, single JVM)
+### Reference Numbers (1M docs, 4 CPUs, 8GB heap, Linux containers)
 
-| Query Type | Jigyasa p50 | ES Reference p50 |
-|-----------|------------|------------------|
-| BM25 text search | 2.15ms | ~5ms |
-| Term filter | 1.58ms | ~3ms |
-| Range filter | 1.31ms | ~4ms |
-| Boolean compound | 1.39ms | ~5ms |
-| Query string | 1.42ms | ~6ms |
-| Match-all + sort | 1.55ms | ~2ms |
-| Count API | 0.83ms | ~2ms |
+| Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup |
+|-----------|:-----------:|:-----------:|:-------:|
+| BM25 text search | 2.77ms | 15.38ms | **5.5x** |
+| Term filter | 2.30ms | 16.15ms | **7.0x** |
+| Range filter | 2.16ms | 9.47ms | **4.4x** |
+| Count | 1.84ms | 8.63ms | **4.7x** |
+| Sort by field | 9.86ms | 23.37ms | **2.4x** |
+| Text + filter | 2.72ms | 12.71ms | **4.7x** |
+| **Avg p50** | **3.61ms** | **14.29ms** | **4.0x** |
+| **Throughput (4 threads)** | **1,467 qps** | **351 qps** | **4.2x** |
 
 ---
 

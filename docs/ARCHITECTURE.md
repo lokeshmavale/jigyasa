@@ -2,7 +2,7 @@
 
 ```
 gRPC Server (50051)
- └─ 13 RPCs → Handler layer
+ └─ 12 RPCs → Handler layer
      └─ CollectionRegistry
          └─ CollectionContext (per collection)
              ├─ IndexWriterManager    (write path)
@@ -38,7 +38,7 @@ The gRPC server uses a split I/O + handler architecture:
 
 ### gRPC Layer
 - `GrpcServerWrapper` — server lifecycle, JVM shutdown hook, graceful shutdown ordering
-- `AnweshanDataPlaneImpl` — routes 13 RPCs to handlers
+- `AnweshanDataPlaneImpl` — routes 12 RPCs to handlers
 
 ### Handlers
 - `IndexRequestHandler` — bulk index/update/delete with translog write-ahead

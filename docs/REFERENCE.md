@@ -7,8 +7,8 @@ All configuration via environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `GRPC_SERVER_PORT` | `50051` | gRPC server port |
-| `INDEX_CACHE_DIR` | `/data/index` | Lucene index directory |
-| `TRANSLOG_DIRECTORY` | `/data/translog` | Write-ahead log directory |
+| `INDEX_CACHE_DIR` | `./IndexData/` | Lucene index directory |
+| `TRANSLOG_DIRECTORY` | `/TransLog/` | Write-ahead log directory |
 | `SERVER_MODE` | `READ_WRITE` | `READ`, `WRITE`, or `READ_WRITE` |
 | `TRANSLOG_DURABILITY` | `request` | `request` (fsync per op) or `async` (periodic fsync) |
 | `TRANSLOG_FLUSH_INTERVAL_MS` | `200` | Async mode fsync interval (ms) |
@@ -16,6 +16,9 @@ All configuration via environment variables:
 | `USE_COMPOUND_FILE` | `false` | Merge into compound files (slower writes, fewer FDs) |
 | `MERGE_MAX_THREADS` | `2` | Concurrent merge threads |
 | `MERGE_MAX_MERGE_COUNT` | `4` | Max concurrent merges |
+| `INDEX_SCHEMA_PATH` | (not set) | Path to schema JSON file (if not set, uses built-in SampleSchema) |
+| `DOCID_OVERLAP_TIMEOUT_MS` | `30000` | Timeout for concurrent updates to same document key |
+| `MAX_VECTOR_DIMENSION` | `2048` | Maximum allowed vector dimension |
 | `BOOTSTRAP_MEMORY_LOCK` | (not set) | Set to `true` to enable native memory locking (mlockall/VirtualLock). Requires `ulimit -l unlimited` on Linux. |
 
 ## Data Storage
@@ -161,48 +164,43 @@ gRPC API defined in [`dpSearch.proto`](../src/main/proto/dpSearch.proto).
 
 ## Full Benchmark Results
 
-All benchmarks run against **Elasticsearch 8.13.0** on the same machine, same data, same shard count. Jigyasa uses REQUEST durability (fsync per operation).
+All benchmarks run on **Linux containers** with equal resources: **4 CPUs, 12GB memory, 8GB JVM heap, 1 shard, 0 replicas**. Jigyasa uses REQUEST durability (fsync per operation), SIMD vectorization enabled, mlockall active.
 
-### 1M Document Scale
+### 1M Document Scale (HTTP logs dataset)
 
-| Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup |
-|---|---|---|---|
-| BM25 text search | **4.32ms** | 13.33ms | **3.1x** |
-| Term filter | **1.07ms** | 15.06ms | **14.1x** |
-| Range filter | **1.37ms** | 8.30ms | **6.1x** |
-| Boolean compound | **1.34ms** | 14.78ms | **11.0x** |
-| Text + filter | **5.20ms** | 13.02ms | **2.5x** |
-| Sort by field | **10.63ms** | 26.08ms | **2.5x** |
-| Count | **0.64ms** | 7.16ms | **11.2x** |
-| Count + filter | **0.87ms** | 6.76ms | **7.8x** |
+| Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup | Jigyasa p99 | ES p99 |
+|---|---|---|---|---|---|
+| BM25 text search | **2.77ms** | 15.38ms | **5.5x** | 5.55ms | 44.00ms |
+| Term filter | **2.30ms** | 16.15ms | **7.0x** | 4.77ms | 33.77ms |
+| Range filter | **2.16ms** | 9.47ms | **4.4x** | 4.24ms | 32.92ms |
+| Count | **1.84ms** | 8.63ms | **4.7x** | 4.21ms | 33.03ms |
+| Sort by field | **9.86ms** | 23.37ms | **2.4x** | 15.13ms | 62.98ms |
+| Text + filter | **2.72ms** | 12.71ms | **4.7x** | 6.11ms | 42.90ms |
+| **Average** | **3.61ms** | **14.29ms** | **4.0x** | **6.67ms** | **41.60ms** |
+
+### Concurrent Throughput (4 threads, 10s)
+
+| Engine | QPS | Errors |
+|---|---|---|
+| **Jigyasa** | **1,467** | 0 |
+| ES 8.13 | 351 | 0 |
+| **Ratio** | **4.2x** | — |
 
 ### Bulk Indexing (1M docs, batch=1000)
 
 | Engine | Throughput | Time |
 |---|---|---|
-| **Jigyasa** | **21,507 docs/s** | 46.5s |
-| ES 8.13 | 14,206 docs/s | 70.4s |
+| **Jigyasa** | **16,991 docs/s** | 58.9s |
+| ES 8.13 | 13,945 docs/s | 71.7s |
 
-### Vector KNN Search (50K docs, 128-dim HNSW)
+### Cold Start (time to first query)
 
-| Query Type | Jigyasa p50 | ES 8.13 p50 | Speedup |
-|---|---|---|---|
-| KNN top-10 | **2.07ms** | 11.35ms | **5.5x** |
-| KNN top-50 | **6.44ms** | 16.22ms | **2.5x** |
-| KNN + filter | **2.86ms** | 16.03ms | **5.6x** |
-| Hybrid BM25+KNN | **2.23ms** | 12.49ms | **5.6x** |
+| Engine | Avg |
+|---|---|
+| **Jigyasa** | **~2s** |
+| ES 8.13 | ~16s |
 
-### JMH Microbenchmarks (pure Lucene, no gRPC)
-
-| Operation | 10K docs | 100K docs | 1M docs | Unit |
-|---|---|---|---|---|
-| BM25 text search | 10,648 | 4,040 | 530 | ops/ms |
-| Term filter | 42,113 | 41,339 | 37,647 | ops/ms |
-| Range filter | 35,088 | 7,407 | 911 | ops/ms |
-| Boolean compound | 11,825 | 1,302 | 128 | ops/ms |
-| Text + filter | 9,487 | 2,169 | 251 | ops/ms |
-| Sort by field | 9,551 | 1,052 | 103 | ops/ms |
-| Count + filter | 83,333 | 58,824 | 71,429 | ops/ms |
+> Reproduce: `python benchmarks/benchmark_1m_sequential.py`
 
 ## Performance Tuning
 

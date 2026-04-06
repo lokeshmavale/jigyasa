@@ -45,7 +45,7 @@ GRPC_SERVER_PORT=9090 java -cp build/libs/jigyasa-1.0-SNAPSHOT.jar com.jigyasa.d
 |----------|---------|-------------|
 | `GRPC_SERVER_PORT` | `50051` | gRPC listen port |
 | `INDEX_CACHE_DIR` | `./IndexData/` | Lucene index storage directory |
-| `SERVER_MODE` | `WRITE` | `WRITE`, `READ`, or `READ_WRITE` |
+| `SERVER_MODE` | `READ_WRITE` | `WRITE`, `READ`, or `READ_WRITE` |
 | `MAX_VECTOR_DIMENSION` | `2048` | Maximum vector dimension allowed |
 
 ### 2. Creating a Collection (= SQLite Table)

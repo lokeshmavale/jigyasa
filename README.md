@@ -20,23 +20,27 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 ## Highlights
 
 - **12 query types** — BM25, phrase, fuzzy, prefix, query-string, KNN, hybrid RRF, term/range/geo/boolean filters
-- **13 gRPC RPCs** — index, query, lookup, count, delete-by-query, schema, collections, health, force-merge
+- **12 gRPC RPCs** — index, query, lookup, count, delete-by-query, schema, collections, health, force-merge
 - **Schema-driven** — STRING, INT32/64, FLOAT, DOUBLE, VECTOR, GEO_POINT with per-field search/filter/sort
 - **NRT search** — 25ms refresh, recency decay scoring, multi-tenant isolation
 - **Agent-ready** — built-in memory tiers (WORKING/EPISODIC/SEMANTIC) with TTL sweeper for LLM agent workflows
 
-## vs Elasticsearch 8.13 (1M docs)
+## vs Elasticsearch 8.13 (1M docs, 4 CPUs, 8GB heap, 1 shard, Linux containers)
 
-| | Jigyasa | ES 8.13 |
-|---|---|---|
-| Avg query latency | **3.18ms** | 13.06ms |
-| Term filter | **1.07ms** | 15.06ms |
-| KNN top-10 | **2.07ms** | 11.35ms |
-| Bulk indexing | **21.5K docs/s** | 14.2K docs/s |
-| Cold start | **1.8s** | 19.5s |
-| Artifact size | **Single JAR** | 587 MB Docker |
+| Metric | Jigyasa | ES 8.13 | Speedup |
+|--------|---------|---------|---------|
+| BM25 text search (p50) | **2.77ms** | 15.38ms | **5.5x** |
+| Term filter (p50) | **2.30ms** | 16.15ms | **7.0x** |
+| Range filter (p50) | **2.16ms** | 9.47ms | **4.4x** |
+| Count (p50) | **1.84ms** | 8.63ms | **4.7x** |
+| Text + filter (p50) | **2.72ms** | 12.71ms | **4.7x** |
+| Avg query p50 | **3.61ms** | 14.29ms | **4.0x** |
+| Concurrent throughput | **1,467 qps** | 351 qps | **4.2x** |
+| Bulk indexing | **17K docs/s** | 14K docs/s | **1.2x** |
+| Cold start | **~2s** | ~16s | **8x** |
+| Artifact size | **Single JAR** | 587 MB Docker | — |
 
-> Full benchmark tables → [docs/REFERENCE.md](docs/REFERENCE.md#full-benchmark-results) · Reproduce it yourself → [benchmarks/](benchmarks/)
+> Reproduce: `python benchmarks/benchmark_1m_sequential.py` · Full tables → [docs/REFERENCE.md](docs/REFERENCE.md#full-benchmark-results)
 
 ## Quick Start
 
@@ -83,7 +87,7 @@ resp = stub.Query(pb.QueryRequest(collection="memories", text_query="dark mode",
 
 ```bash
 ./gradlew build                                        # compile + test
-./gradlew test                                         # 200 tests
+./gradlew test                                         # 214 tests
 ./gradlew spotbugsMain                                 # Static analysis (0 bugs)
 python smoke_test.py                                   # e2e against running server
 
