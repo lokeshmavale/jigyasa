@@ -2,6 +2,7 @@ package com.jigyasa.dp.search.integration;
 
 import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.handlers.IndexRequestHandler;
+import com.jigyasa.dp.search.handlers.IndexSearcherManager;
 import com.jigyasa.dp.search.handlers.IndexSearcherManagerISCH;
 import com.jigyasa.dp.search.handlers.InitializedSchemaISCH;
 import com.jigyasa.dp.search.handlers.QueryRequestHandler;
@@ -267,7 +268,7 @@ class HybridSearchTest {
         IndexSearcher acquiredSearcher = new IndexSearcher(reader);
         acquiredSearcher.setSimilarity(schema.getInitializedSchema().getBm25Similarity());
         when(searcherManager.acquireSearcher()).thenReturn(acquiredSearcher);
-        when(searcherManager.leaseSearcher()).thenReturn(new IndexSearcherManagerISCH.SearcherLease(acquiredSearcher, searcherManager));
+        when(searcherManager.leaseSearcher()).thenReturn(new IndexSearcherManager.SearcherLease(acquiredSearcher, searcherManager));
 
         HandlerHelpers helpers = mock(HandlerHelpers.class);
         when(helpers.indexSchemaManager()).thenReturn(schemaManager);

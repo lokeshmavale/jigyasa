@@ -26,8 +26,9 @@
             <Class name="com.jigyasa.dp.search.collections.CollectionContext"/>
             <Class name="com.jigyasa.dp.search.utils.DocIdOverlapLock$UniqueIdsPerRequest"/>
             <!-- Records: immutable by convention, fields are intentionally exposed -->
-            <Class name="com.jigyasa.dp.search.handlers.IndexWriterManagerISCH$WriterLease"/>
-            <Class name="com.jigyasa.dp.search.handlers.IndexSearcherManagerISCH$SearcherLease"/>
+            <Class name="com.jigyasa.dp.search.handlers.IndexWriterManager$WriterLease"/>
+            <Class name="com.jigyasa.dp.search.handlers.IndexSearcherManager$SearcherLease"/>
+            <Class name="com.jigyasa.dp.search.handlers.translog.TranslogReader"/>
             <Class name="com.jigyasa.dp.search.handlers.IndexRequestHandler$IndexResult"/>
             <Class name="com.jigyasa.dp.search.handlers.IndexRequestHandler$IndexRequestContext"/>
             <Class name="com.jigyasa.dp.search.query.QueryContext"/>

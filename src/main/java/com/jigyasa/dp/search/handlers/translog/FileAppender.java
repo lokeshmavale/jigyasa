@@ -5,17 +5,13 @@ import com.jigyasa.dp.search.utils.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.EOFException;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.SyncFailedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -31,17 +27,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li><b>ASYNC</b> — buffer writes, fsync periodically (fastest, data loss window = flush interval)</li>
  * </ul>
  *
- * <h3>Checkpoint file:</h3>
- * A small {@code translog.ckp} file is written atomically after each fsync, recording
- * the number of valid operations and total bytes. On recovery, only entries covered by
- * the checkpoint are replayed — partial/corrupt trailing entries are safely ignored.
- * This mirrors ES's Checkpoint.java approach.
+ * <p>Checkpoint persistence is delegated to {@link TranslogCheckpointManager}.
+ * Recovery reads are delegated to {@link TranslogReader}.</p>
  */
 public class FileAppender implements TranslogAppender {
     private static final Logger log = LoggerFactory.getLogger(FileAppender.class);
     private static final long MAX_FILE_SIZE = 3L * 1024 * 1024 * 1024; // 3 GB
-    private static final String FILE_PREFIX = "translog.dat.";
-    private static final String CHECKPOINT_FILE = "translog.ckp";
+    static final String FILE_PREFIX = "translog.dat.";
 
     public enum Durability { REQUEST, ASYNC }
 
@@ -54,11 +46,11 @@ public class FileAppender implements TranslogAppender {
     private volatile boolean dirty = false;
     private ScheduledExecutorService flushScheduler;
 
-    // Checkpoint state: tracks what has been safely fsynced
     private final AtomicInteger totalOps = new AtomicInteger(0);
     private long totalBytesWritten = 0;
-    private int syncedOps = 0;
-    private long syncedBytes = 0;
+
+    private final TranslogCheckpointManager checkpointManager;
+    private final TranslogReader translogReader;
 
     public FileAppender(String dir) {
         this(dir, Durability.REQUEST, 200);
@@ -68,6 +60,8 @@ public class FileAppender implements TranslogAppender {
         try {
             this.dir = dir;
             this.durability = durability;
+            this.checkpointManager = new TranslogCheckpointManager(dir);
+            this.translogReader = new TranslogReader(dir, FILE_PREFIX, checkpointManager);
             // Load checkpoint BEFORE opening file — checkpoint tells us which file to continue from.
             // Without this, restart always opens file 0, corrupting append order after rollover.
             Files.createDirectories(Path.of(dir));
@@ -110,44 +104,17 @@ public class FileAppender implements TranslogAppender {
             log.debug("fsync not supported on this filesystem, data flushed to OS cache only");
         }
         // After fsync, write checkpoint so recovery knows how far is safe
-        writeCheckpoint();
-    }
-
-    private void writeCheckpoint() throws IOException {
-        syncedOps = totalOps.get();
-        syncedBytes = totalBytesWritten;
-        Path ckpPath = Paths.get(dir, CHECKPOINT_FILE);
-        Path tmpPath = Paths.get(dir, CHECKPOINT_FILE + ".tmp");
-        // Atomic write: write to temp, fsync, rename (like ES's < 512 byte checkpoint)
-        try (FileOutputStream ckpFos = new FileOutputStream(tmpPath.toString());
-             DataOutputStream ckpDos = new DataOutputStream(ckpFos)) {
-            ckpDos.writeInt(syncedOps);
-            ckpDos.writeLong(syncedBytes);
-            ckpDos.writeInt(currentFileNumber - 1); // current file index
-            ckpDos.flush();
-            ckpFos.getFD().sync();
-        }
-        // Atomic rename
-        Files.move(tmpPath, ckpPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        checkpointManager.writeCheckpoint(totalOps.get(), totalBytesWritten, currentFileNumber - 1);
     }
 
     private void loadCheckpoint() {
-        Path ckpPath = Paths.get(dir, CHECKPOINT_FILE);
-        if (Files.exists(ckpPath)) {
-            try (DataInputStream dis = new DataInputStream(new FileInputStream(ckpPath.toString()))) {
-                syncedOps = dis.readInt();
-                syncedBytes = dis.readLong();
-                int fileNum = dis.readInt();
-                totalOps.set(syncedOps);
-                totalBytesWritten = syncedBytes;
-                // Resume from the correct file number after rollover.
-                // Without this, restart always opens file 0, corrupting append ordering.
-                currentFileNumber = fileNum + 1;
-                log.info("Loaded translog checkpoint: {} ops, {} bytes, resuming from file {}", syncedOps, syncedBytes, currentFileNumber);
-            } catch (IOException e) {
-                log.warn("Failed to load translog checkpoint, will replay all entries", e);
-            }
+        int fileNum = checkpointManager.loadCheckpoint();
+        if (fileNum >= 0) {
+            totalOps.set(checkpointManager.getSyncedOps());
+            totalBytesWritten = checkpointManager.getSyncedBytes();
+            // Resume from the correct file number after rollover.
+            currentFileNumber = fileNum + 1;
+            log.info("Resuming from file {}", currentFileNumber);
         }
     }
 
@@ -233,17 +200,11 @@ public class FileAppender implements TranslogAppender {
                     throw new RuntimeException("Failed to delete translog file: " + path, e);
                 }
             }
-            // Also clean checkpoint
-            try {
-                Files.deleteIfExists(Paths.get(dir, CHECKPOINT_FILE));
-            } catch (IOException e) {
-                log.warn("Failed to delete checkpoint file", e);
-            }
+            checkpointManager.deleteCheckpoint();
             currentFileNumber = 0;
             totalOps.set(0);
             totalBytesWritten = 0;
-            syncedOps = 0;
-            syncedBytes = 0;
+            checkpointManager.reset();
             try {
                 openNewFile();
             } catch (Exception e) {
@@ -254,55 +215,7 @@ public class FileAppender implements TranslogAppender {
 
     @Override
     public List<IndexRequest> getData() {
-        // Load checkpoint to know how many ops are safely fsynced
-        loadCheckpoint();
-        int safeOps = syncedOps;
-
-        List<IndexRequest> items = new LinkedList<>();
-        int opsRead = 0;
-        for (Path path : FileUtils.listFilesWithPrefix(Path.of(dir), FILE_PREFIX, true)) {
-            try (DataInputStream dis = new DataInputStream(new FileInputStream(path.toString()))) {
-                while (true) {
-                    long length;
-                    try {
-                        length = dis.readLong();
-                    } catch (EOFException e) {
-                        break; // End of file reached cleanly
-                    }
-                    if (length <= 0 || length > Integer.MAX_VALUE) {
-                        log.warn("Invalid translog entry length {} in file {}, stopping read", length, path);
-                        break;
-                    }
-                    byte[] byteArray = new byte[(int) length];
-                    try {
-                        dis.readFully(byteArray);
-                    } catch (EOFException e) {
-                        log.warn("Truncated translog entry in file {} (expected {} bytes), discarding partial entry", path, length);
-                        break;
-                    }
-                    opsRead++;
-                    if (safeOps > 0 && opsRead > safeOps) {
-                        log.warn("Skipping {} unsynced translog entries beyond checkpoint ({} safe ops)",
-                                opsRead - safeOps, safeOps);
-                        break;
-                    }
-                    try {
-                        items.add(IndexRequest.parseFrom(byteArray));
-                    } catch (Exception parseEx) {
-                        log.warn("Corrupt translog entry #{} in file {} ({} bytes), skipping",
-                                opsRead, path, length, parseEx);
-                    }
-                }
-            } catch (IOException e) {
-                log.error("Error reading translog file: {}", path, e);
-                throw new RuntimeException("Failed to read translog file: " + path, e);
-            }
-            if (safeOps > 0 && opsRead >= safeOps) {
-                break;
-            }
-        }
-        log.info("Read {} translog entries for recovery (checkpoint: {} safe ops)", items.size(), safeOps);
-        return items;
+        return translogReader.getData();
     }
 
     public void shutdown() {

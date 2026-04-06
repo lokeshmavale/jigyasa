@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @RequiredArgsConstructor
-public class IndexWriterManagerISCH implements IndexSchemaChangeHandler {
+public class IndexWriterManagerISCH implements IndexSchemaChangeHandler, IndexWriterManager {
     private static final Logger log = LoggerFactory.getLogger(IndexWriterManagerISCH.class);
     public static final String COMMIT_DATA_SCHEMA_KEY = "_schema_json";
 
@@ -178,12 +178,9 @@ public class IndexWriterManagerISCH implements IndexSchemaChangeHandler {
         return indexWriter;
     }
 
-    public record WriterLease(IndexWriter writer, IndexWriterManagerISCH mgr) implements AutoCloseable {
-        @Override public void close() { mgr.releaseWriter(); }
-    }
-
-    public WriterLease leaseWriter() {
-        return new WriterLease(acquireWriter(), this);
+    @Override
+    public IndexWriterManager.WriterLease leaseWriter() {
+        return new IndexWriterManager.WriterLease(acquireWriter(), this);
     }
 
     public void releaseWriter() {

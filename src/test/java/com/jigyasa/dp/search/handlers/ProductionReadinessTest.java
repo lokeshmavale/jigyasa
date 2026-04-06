@@ -109,7 +109,7 @@ class ProductionReadinessTest {
             acquiredSearcher.setSimilarity(schema.getInitializedSchema().getBm25Similarity());
             when(searcherManager.acquireSearcher()).thenReturn(acquiredSearcher);
             when(searcherManager.leaseSearcher()).thenReturn(
-                    new IndexSearcherManagerISCH.SearcherLease(acquiredSearcher, searcherManager));
+                    new IndexSearcherManager.SearcherLease(acquiredSearcher, searcherManager));
 
             HandlerHelpers helpers = mock(HandlerHelpers.class);
             when(helpers.indexSchemaManager()).thenReturn(schemaManager);
@@ -222,7 +222,7 @@ class ProductionReadinessTest {
             when(helpers.indexSchemaManager()).thenReturn(schemaManager);
             when(writerManager.acquireWriter()).thenReturn(indexWriter);
             when(writerManager.leaseWriter()).thenReturn(
-                    new IndexWriterManagerISCH.WriterLease(indexWriter, writerManager));
+                    new IndexWriterManager.WriterLease(indexWriter, writerManager));
             when(indexWriter.getMaxCompletedSequenceNumber()).thenReturn(42L);
 
             translogManager = mock(TranslogAppenderManager.class);
@@ -320,7 +320,7 @@ class ProductionReadinessTest {
             when(helpers.indexSchemaManager()).thenReturn(schemaManager);
             when(writerManager.acquireWriter()).thenReturn(indexWriter);
             when(writerManager.leaseWriter()).thenReturn(
-                    new IndexWriterManagerISCH.WriterLease(indexWriter, writerManager));
+                    new IndexWriterManager.WriterLease(indexWriter, writerManager));
             when(indexWriter.getMaxCompletedSequenceNumber()).thenReturn(1L);
 
             translogManager = mock(TranslogAppenderManager.class);

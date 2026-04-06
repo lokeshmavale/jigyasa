@@ -19,6 +19,8 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 
 import java.util.List;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 /**
  * Constructs the base Lucene Query from a QueryRequest.
@@ -32,20 +34,39 @@ import java.util.List;
  */
 public class BaseQueryBuilder {
 
+    // Ordered list of query type resolvers — first match wins.
+    // New query types can be added by appending to this list.
+    private static final List<QueryTypeResolver> QUERY_RESOLVERS = List.of(
+        new QueryTypeResolver(req -> !req.getQueryString().isEmpty(),
+            (req, schema) -> buildQueryString(req.getQueryString(), req.getQueryStringDefaultField(), schema)),
+        new QueryTypeResolver(req -> !req.getTextQuery().isEmpty(),
+            (req, schema) -> buildTextQuery(req.getTextQuery(), req.getTextField(), schema)),
+        new QueryTypeResolver(req -> !req.getPhraseQuery().isEmpty(),
+            (req, schema) -> buildPhraseQuery(req.getPhraseQuery(), req.getPhraseField(), req.getPhraseSlop(), schema)),
+        new QueryTypeResolver(req -> !req.getFuzzyQuery().isEmpty(),
+            (req, schema) -> buildFuzzyQuery(req.getFuzzyQuery(), req.getFuzzyField(), req.getMaxEdits(), req.getPrefixLength(), schema)),
+        new QueryTypeResolver(req -> !req.getPrefixQuery().isEmpty(),
+            (req, schema) -> buildPrefixQuery(req.getPrefixQuery(), req.getPrefixField(), schema))
+    );
+
+    private record QueryTypeResolver(
+        Predicate<QueryRequest> matches,
+        BiFunction<QueryRequest, InitializedIndexSchema, Query> build
+    ) {}
+
+    static boolean hasAnyTextQuery(QueryRequest req) {
+        return QUERY_RESOLVERS.stream().anyMatch(r -> r.matches().test(req));
+    }
+
     public Query build(QueryContext context) {
         QueryRequest req = context.request();
         InitializedIndexSchema schema = context.initializedSchema();
-        boolean hasText = !req.getTextQuery().isEmpty();
-        boolean hasPhrase = !req.getPhraseQuery().isEmpty();
-        boolean hasFuzzy = !req.getFuzzyQuery().isEmpty();
         boolean hasVector = req.hasVectorQuery() && req.getVectorQuery().getVectorCount() > 0;
-        boolean hasPrefixQuery = !req.getPrefixQuery().isEmpty();
-        boolean hasQueryString = !req.getQueryString().isEmpty();
 
         // Merge user filters + tenant into a single combined filter
         Query combinedFilter = buildCombinedFilter(req, schema);
 
-        boolean hasAnyText = hasText || hasPhrase || hasFuzzy || hasPrefixQuery || hasQueryString;
+        boolean hasAnyText = hasAnyTextQuery(req);
 
         if (!hasAnyText && !hasVector) {
             Query base = new MatchAllDocsQuery();
@@ -96,13 +117,8 @@ public class BaseQueryBuilder {
     }
 
     public boolean isHybrid(QueryRequest req) {
-        boolean hasText = !req.getTextQuery().isEmpty();
-        boolean hasPhrase = !req.getPhraseQuery().isEmpty();
-        boolean hasFuzzy = !req.getFuzzyQuery().isEmpty();
-        boolean hasPrefixQuery = !req.getPrefixQuery().isEmpty();
-        boolean hasQueryString = !req.getQueryString().isEmpty();
         boolean hasVector = req.hasVectorQuery() && req.getVectorQuery().getVectorCount() > 0;
-        return (hasText || hasPhrase || hasFuzzy || hasPrefixQuery || hasQueryString) && hasVector;
+        return hasAnyTextQuery(req) && hasVector;
     }
 
     /**
@@ -110,19 +126,11 @@ public class BaseQueryBuilder {
      * query_string > text > phrase > fuzzy > prefix.
      */
     static Query resolveTextTypeQuery(QueryRequest req, InitializedIndexSchema schema) {
-        if (!req.getQueryString().isEmpty()) {
-            return buildQueryString(req.getQueryString(), req.getQueryStringDefaultField(), schema);
-        }
-        if (!req.getTextQuery().isEmpty()) {
-            return buildTextQuery(req.getTextQuery(), req.getTextField(), schema);
-        }
-        if (!req.getPhraseQuery().isEmpty()) {
-            return buildPhraseQuery(req.getPhraseQuery(), req.getPhraseField(), req.getPhraseSlop(), schema);
-        }
-        if (!req.getFuzzyQuery().isEmpty()) {
-            return buildFuzzyQuery(req.getFuzzyQuery(), req.getFuzzyField(), req.getMaxEdits(), req.getPrefixLength(), schema);
-        }
-        return buildPrefixQuery(req.getPrefixQuery(), req.getPrefixField(), schema);
+        return QUERY_RESOLVERS.stream()
+                .filter(r -> r.matches().test(req))
+                .findFirst()
+                .map(r -> r.build().apply(req, schema))
+                .orElseThrow(() -> new IllegalArgumentException("No text query type specified"));
     }
 
     // ---- Query string parsing (Lucene QueryParser — full syntax) ----

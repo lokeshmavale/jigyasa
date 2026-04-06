@@ -52,7 +52,7 @@ class DeleteByQueryRequestHandlerTest {
         when(helpers.indexSearcherManager()).thenReturn(searcherManager);
         when(helpers.indexSchemaManager()).thenReturn(schemaManager);
         when(writerManager.acquireWriter()).thenReturn(indexWriter);
-        when(writerManager.leaseWriter()).thenReturn(new IndexWriterManagerISCH.WriterLease(indexWriter, writerManager));
+        when(writerManager.leaseWriter()).thenReturn(new IndexWriterManager.WriterLease(indexWriter, writerManager));
         when(indexWriter.getMaxCompletedSequenceNumber()).thenReturn(42L);
 
         // Mock translog for commit+reset after delete-by-query

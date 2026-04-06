@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 @RequiredArgsConstructor
-public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler {
+public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler, IndexSearcherManager {
     private static final Logger log = LoggerFactory.getLogger(IndexSearcherManagerISCH.class);
 
     // NRT refresh tuning: min 25ms between refreshes, max 1s staleness when waiters exist
@@ -79,12 +79,9 @@ public class IndexSearcherManagerISCH implements IndexSchemaChangeHandler {
         }
     }
 
-    public record SearcherLease(IndexSearcher searcher, IndexSearcherManagerISCH mgr) implements AutoCloseable {
-        @Override public void close() { mgr.releaseSearcher(searcher); }
-    }
-
-    public SearcherLease leaseSearcher() {
-        return new SearcherLease(acquireSearcher(), this);
+    @Override
+    public IndexSearcherManager.SearcherLease leaseSearcher() {
+        return new IndexSearcherManager.SearcherLease(acquireSearcher(), this);
     }
 
     public void releaseSearcher(IndexSearcher searcher) {
