@@ -173,6 +173,74 @@ class FileAppenderTest {
         }
     }
 
+    @Test
+    @DisplayName("Valid entries after corrupt entry are still recovered")
+    void validEntriesAfterCorruptEntryRecovered() throws Exception {
+        // Write 3 entries through the appender so the checkpoint covers all 3
+        appender.append(buildRequest("doc1", "first"));
+        appender.append(buildRequest("doc2", "second"));
+        appender.append(buildRequest("doc3", "third"));
+        appender.closeOpenFiles();
+
+        // Find the translog file and corrupt the SECOND entry's payload on disk
+        Path[] files = Files.list(tempDir)
+                .filter(p -> p.getFileName().toString().startsWith("translog.dat"))
+                .sorted()
+                .toArray(Path[]::new);
+
+        byte[] fileBytes = Files.readAllBytes(files[0]);
+        // Entry format: [8-byte long length][payload]. Navigate to entry 2's payload.
+        int offset = 0;
+        // Skip entry 1: read its length (big-endian long), then skip length + 8
+        long len1 = java.nio.ByteBuffer.wrap(fileBytes, offset, 8).getLong();
+        offset += 8 + (int) len1;
+        // Now at entry 2's length header
+        long len2 = java.nio.ByteBuffer.wrap(fileBytes, offset, 8).getLong();
+        int entry2PayloadStart = offset + 8;
+        // Corrupt entry 2's payload with garbage bytes
+        for (int i = entry2PayloadStart; i < entry2PayloadStart + (int) len2; i++) {
+            fileBytes[i] = (byte) 0xFF;
+        }
+        Files.write(files[0], fileBytes);
+
+        FileAppender recovered = new FileAppender(tempDir.toString());
+        try {
+            List<IndexRequest> data = recovered.getData();
+            // TranslogReader skips corrupt entries and continues reading.
+            // Entries 1 and 3 are valid; entry 2 is corrupt and skipped.
+            assertThat(data).hasSize(2);
+            assertThat(data.get(0).getItem(0).getDocument()).isEqualTo("first");
+            assertThat(data.get(1).getItem(0).getDocument()).isEqualTo("third");
+        } finally {
+            recovered.closeOpenFiles();
+        }
+    }
+
+    @Test
+    @DisplayName("Multiple restart cycles preserve checkpoint state")
+    void multipleRestartCyclesPreserveCheckpoint() throws Exception {
+        // Write some entries, close
+        appender.append(buildRequest("doc1", "data1"));
+        appender.append(buildRequest("doc2", "data2"));
+        appender.closeOpenFiles();
+
+        // Restart 1: should pick up from checkpoint
+        FileAppender restart1 = new FileAppender(tempDir.toString());
+        restart1.append(buildRequest("doc3", "data3"));
+        restart1.closeOpenFiles();
+
+        // Restart 2: should pick up from restart1's checkpoint
+        FileAppender restart2 = new FileAppender(tempDir.toString());
+        try {
+            restart2.append(buildRequest("doc4", "data4"));
+            List<IndexRequest> data = restart2.getData();
+            // Should see entries from original, restart1, and restart2
+            assertThat(data).hasSizeGreaterThanOrEqualTo(3);
+        } finally {
+            restart2.closeOpenFiles();
+        }
+    }
+
     private IndexRequest buildRequest(String id, String content) {
         return IndexRequest.newBuilder()
                 .addItem(IndexItem.newBuilder()

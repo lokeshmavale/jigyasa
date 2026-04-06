@@ -1,5 +1,6 @@
 package com.jigyasa.dp.search.handlers;
 
+import com.google.rpc.Code;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.handlers.translog.FileAppender;
 import com.jigyasa.dp.search.handlers.translog.TranslogAppender;
@@ -170,6 +171,50 @@ class ProductionReadinessTest {
             assertThat(result.get()).isNotNull();
         }
 
+        @Test
+        @DisplayName("Offset 10001 rejected with INVALID_ARGUMENT")
+        void offset10001_rejected() {
+            QueryRequest req = QueryRequest.newBuilder()
+                    .setOffset(10_001)
+                    .setTopK(10)
+                    .build();
+
+            @SuppressWarnings("unchecked")
+            StreamObserver<QueryResponse> observer = mock(StreamObserver.class);
+            handler.internalHandle(req, observer);
+
+            ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
+            verify(observer).onError(captor.capture());
+            verify(observer, never()).onNext(any());
+
+            assertThat(captor.getValue()).isInstanceOf(StatusRuntimeException.class);
+            assertThat(((StatusRuntimeException) captor.getValue()).getStatus().getCode())
+                    .isEqualTo(Status.Code.INVALID_ARGUMENT);
+        }
+
+        @Test
+        @DisplayName("Offset -1 treated as 0 (clamped to non-negative)")
+        void offsetNegative_treatedAsZero() {
+            QueryRequest req = QueryRequest.newBuilder()
+                    .setOffset(-1)
+                    .setTopK(1)
+                    .build();
+
+            AtomicReference<QueryResponse> result = new AtomicReference<>();
+            @SuppressWarnings("unchecked")
+            StreamObserver<QueryResponse> observer = mock(StreamObserver.class);
+            doAnswer(inv -> {
+                result.set(inv.getArgument(0));
+                return null;
+            }).when(observer).onNext(any());
+
+            handler.internalHandle(req, observer);
+
+            // Negative offset is clamped to 0 via Math.max(0, offset), so no error
+            verify(observer, never()).onError(any());
+            assertThat(result.get()).isNotNull();
+        }
+
         private IndexSchema buildQuerySchema() {
             SchemaField idField = new SchemaField();
             idField.setName("id");
@@ -289,6 +334,9 @@ class ProductionReadinessTest {
 
             // Commit must still have been called before the failed reset
             verify(indexWriter).commit();
+
+            // Response should still report deletedCount = -1 (server doesn't track exact count)
+            assertThat(captor.getValue().getDeletedCount()).isEqualTo(-1);
         }
     }
 
@@ -401,6 +449,125 @@ class ProductionReadinessTest {
 
             // Translog append must never be called when all items fail
             verify(translogAppender, never()).append(any(IndexRequest.class));
+        }
+
+        @Test
+        @DisplayName("Partial batch: valid items indexed and translogged even when some items fail")
+        void partialBatchFailure_validItemsTranslogged() throws Exception {
+            // Use a REAL schema so handleUpdate can process fields through FieldMapperStrategy
+            IndexSchema realSchema = buildRealSchema();
+            new InitializedSchemaISCH().handle(realSchema, null);
+
+            // Reconfigure the schema manager mock to return the real schema
+            when(schemaManager.getIndexSchema()).thenReturn(realSchema);
+
+            // Use a real in-memory IndexWriter for actual document processing
+            Directory directory = new ByteBuffersDirectory();
+            IndexWriterConfig iwc = new IndexWriterConfig(realSchema.getInitializedSchema().getIndexAnalyzer());
+            iwc.setSimilarity(realSchema.getInitializedSchema().getBm25Similarity());
+            IndexWriter realWriter = new IndexWriter(directory, iwc);
+            when(writerManager.leaseWriter()).thenReturn(
+                    new IndexWriterManager.WriterLease(realWriter, writerManager));
+
+            // Item 1: valid document with all known fields
+            // Item 2: document with blank key value → per-item INVALID_ARGUMENT in handleUpdate
+            IndexRequest req = IndexRequest.newBuilder()
+                    .addItem(IndexItem.newBuilder()
+                            .setAction(IndexAction.UPDATE)
+                            .setDocument("{\"id\":\"doc1\",\"name\":\"Valid Document\"}")
+                            .build())
+                    .addItem(IndexItem.newBuilder()
+                            .setAction(IndexAction.UPDATE)
+                            .setDocument("{\"id\":\"\",\"name\":\"Blank Key\"}")
+                            .build())
+                    .build();
+
+            @SuppressWarnings("unchecked")
+            StreamObserver<IndexResponse> observer = mock(StreamObserver.class);
+            ArgumentCaptor<IndexResponse> responseCaptor = ArgumentCaptor.forClass(IndexResponse.class);
+
+            handler.internalHandle(req, observer);
+
+            // Handler should succeed (not throw gRPC error)
+            verify(observer, never()).onError(any());
+            verify(observer).onNext(responseCaptor.capture());
+            verify(observer).onCompleted();
+
+            // Verify per-item statuses
+            IndexResponse response = responseCaptor.getValue();
+            assertThat(response.getItemResponseList()).hasSize(2);
+            assertThat(response.getItemResponse(0).getCode()).isEqualTo(Code.OK_VALUE);
+            assertThat(response.getItemResponse(1).getCode()).isEqualTo(Code.INVALID_ARGUMENT_VALUE);
+
+            // Translog IS appended because item 1 succeeded
+            verify(translogAppender).append(any(IndexRequest.class));
+
+            realWriter.close();
+            directory.close();
+        }
+
+        @Test
+        @DisplayName("Unknown field in document returns per-item INVALID_ARGUMENT")
+        void unknownFieldInDocument_returnsInvalidArgument() throws Exception {
+            // Use a REAL schema so handleUpdate can process fields through FieldMapperStrategy
+            IndexSchema realSchema = buildRealSchema();
+            new InitializedSchemaISCH().handle(realSchema, null);
+
+            when(schemaManager.getIndexSchema()).thenReturn(realSchema);
+
+            Directory directory = new ByteBuffersDirectory();
+            IndexWriterConfig iwc = new IndexWriterConfig(realSchema.getInitializedSchema().getIndexAnalyzer());
+            iwc.setSimilarity(realSchema.getInitializedSchema().getBm25Similarity());
+            IndexWriter realWriter = new IndexWriter(directory, iwc);
+            when(writerManager.leaseWriter()).thenReturn(
+                    new IndexWriterManager.WriterLease(realWriter, writerManager));
+
+            // Document with a field not in the schema
+            IndexRequest req = IndexRequest.newBuilder()
+                    .addItem(IndexItem.newBuilder()
+                            .setAction(IndexAction.UPDATE)
+                            .setDocument("{\"id\":\"doc1\",\"unknownField\":\"some value\"}")
+                            .build())
+                    .build();
+
+            @SuppressWarnings("unchecked")
+            StreamObserver<IndexResponse> observer = mock(StreamObserver.class);
+            ArgumentCaptor<IndexResponse> responseCaptor = ArgumentCaptor.forClass(IndexResponse.class);
+
+            handler.internalHandle(req, observer);
+
+            verify(observer, never()).onError(any());
+            verify(observer).onNext(responseCaptor.capture());
+
+            IndexResponse response = responseCaptor.getValue();
+            assertThat(response.getItemResponseList()).hasSize(1);
+            assertThat(response.getItemResponse(0).getCode()).isEqualTo(Code.INVALID_ARGUMENT_VALUE);
+            assertThat(response.getItemResponse(0).getMessage()).contains("Unknown field");
+
+            // Translog NOT appended — no successful items
+            verify(translogAppender, never()).append(any(IndexRequest.class));
+
+            realWriter.close();
+            directory.close();
+        }
+
+        private IndexSchema buildRealSchema() {
+            SchemaField idField = new SchemaField();
+            idField.setName("id");
+            idField.setType(FieldDataType.STRING);
+            idField.setKey(true);
+            idField.setFilterable(true);
+
+            SchemaField nameField = new SchemaField();
+            nameField.setName("name");
+            nameField.setType(FieldDataType.STRING);
+            nameField.setKey(false);
+            nameField.setSearchable(true);
+
+            IndexSchema schema = new IndexSchema();
+            schema.setFields(new SchemaField[]{idField, nameField});
+            schema.setBm25Config(new BM25Config());
+            return schema;
         }
     }
 
