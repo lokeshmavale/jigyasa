@@ -131,6 +131,7 @@ A complete interactive e-commerce search application with a CLI menu:
 4. **Find nearby stores** — geo-distance search within a radius
 5. **Advanced search** — text + category filter + price sort combined
 6. **Product count** — total and per-category counts
+7. **Faceted search** — browse with category and price range facets
 
 Indexes 20 real-looking products with text, numeric, boolean, and geo-point fields.
 

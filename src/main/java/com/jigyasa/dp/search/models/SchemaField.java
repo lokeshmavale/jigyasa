@@ -16,4 +16,5 @@ public class SchemaField {
     private boolean searchable;
     private boolean filterable;
     private boolean sortable;
+    private boolean facetable;
 }

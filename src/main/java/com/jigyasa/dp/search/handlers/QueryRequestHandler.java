@@ -4,9 +4,11 @@ import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.IndexSchema;
 import com.jigyasa.dp.search.models.InitializedIndexSchema;
+import com.jigyasa.dp.search.protocol.FacetResult;
 import com.jigyasa.dp.search.protocol.QueryRequest;
 import com.jigyasa.dp.search.protocol.QueryResponse;
 import com.jigyasa.dp.search.query.BaseQueryBuilder;
+import com.jigyasa.dp.search.query.FacetExecutor;
 import com.jigyasa.dp.search.query.HybridRrfExecutor;
 import com.jigyasa.dp.search.query.QueryContext;
 import com.jigyasa.dp.search.query.QueryExecutor;
@@ -18,13 +20,17 @@ import com.jigyasa.dp.search.query.SortBuilder;
 import com.jigyasa.dp.search.services.RequestHandlerBase;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import org.apache.lucene.facet.FacetsCollector;
+import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Thin orchestrator that delegates to composable pipeline components.
@@ -43,6 +49,7 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
     private final QueryExecutor executor;
     private final HybridRrfExecutor hybridExecutor;
     private final QueryResponseBuilder responseBuilder;
+    private final FacetExecutor facetExecutor;
 
     public QueryRequestHandler(CollectionRegistry registry) {
         super("Query");
@@ -50,6 +57,7 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
         this.queryBuilder = new BaseQueryBuilder();
         this.executor = new QueryExecutor();
         this.responseBuilder = new QueryResponseBuilder();
+        this.facetExecutor = new FacetExecutor();
 
         // Pipeline: only scoring modifiers. Filters (user + tenant) are handled
         // in BaseQueryBuilder.build() because KNN pre-filters must be baked into
@@ -87,20 +95,44 @@ public class QueryRequestHandler extends RequestHandlerBase<QueryRequest, QueryR
             int numHits = useSearchAfter ? topK : topK + offset;
             if (useSearchAfter) offset = 0;
 
+            boolean hasFacets = req.getFacetsCount() > 0;
+            FacetsCollector fc = null;
             TopDocs topDocs;
+
             if (queryBuilder.isHybrid(req)) {
+                if (hasFacets) {
+                    throw new IllegalArgumentException(
+                            "Faceting is not supported with hybrid search. "
+                                    + "Use text_query or vector_query alone, not both.");
+                }
                 topDocs = hybridExecutor.execute(lease.searcher(), context, numHits);
             } else {
                 Query query = queryBuilder.build(context);
                 query = pipeline.apply(query, context);
                 Sort sort = SortBuilder.build(req.getSortList(), schema);
-                topDocs = executor.execute(lease.searcher(), query, numHits, sort,
-                        useSearchAfter ? req.getSearchAfter() : null);
+
+                if (hasFacets && !(query instanceof MatchAllDocsQuery)) {
+                    // Filtered path: single-pass TopDocs + FacetsCollector
+                    var facetsResult = executor.executeWithFacets(lease.searcher(), query, numHits, sort,
+                            useSearchAfter ? req.getSearchAfter() : null);
+                    topDocs = facetsResult.topDocs();
+                    fc = facetsResult.facetsCollector();
+                } else {
+                    // No facets, or MatchAll (facets computed via full DV scan, fc stays null)
+                    topDocs = executor.execute(lease.searcher(), query, numHits, sort,
+                            useSearchAfter ? req.getSearchAfter() : null);
+                }
+            }
+
+            // Compute facets if requested
+            Map<String, FacetResult> facets = Collections.emptyMap();
+            if (hasFacets) {
+                facets = facetExecutor.compute(lease.searcher(), fc, schema, req.getFacetsList());
             }
 
             QueryResponse response = responseBuilder.build(topDocs, lease.searcher(), schema,
                     req.getIncludeSource(), offset, topK, req.getMinScore(),
-                    req.getSourceFieldsList());
+                    req.getSourceFieldsList(), facets);
             observer.onNext(response);
             observer.onCompleted();
         } catch (IllegalArgumentException e) {

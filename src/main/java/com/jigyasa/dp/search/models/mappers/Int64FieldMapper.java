@@ -29,6 +29,8 @@ public class Int64FieldMapper extends FieldMapperStrategy {
 
         if (schemaField.isSortable()) {
             doc.add(getSortableField(schemaField, val));
+        } else if (schemaField.isFacetable() && !schemaField.isFilterable()) {
+            doc.add(getSortableField(schemaField, val));
         }
     }
 

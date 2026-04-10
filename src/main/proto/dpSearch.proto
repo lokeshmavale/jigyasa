@@ -145,6 +145,10 @@ message QueryRequest {
   string query_string = 25;
   // Default field for query_string when no field: prefix is used (empty = first searchable field)
   string query_string_default_field = 26;
+
+  // Faceted navigation: compute value counts / range buckets for specified fields.
+  // Fields must be marked facetable in the schema. Counts reflect ALL matching documents.
+  repeated FacetRequest facets = 27;
 }
 
 message VectorQuery {
@@ -240,6 +244,7 @@ message QueryResponse {
   repeated QueryHit hits = 2;
   bool total_hits_exact = 3;  // false when total_hits is a lower bound
   SearchAfterToken next_search_after = 4;  // Token for fetching next page
+  map<string, FacetResult> facets = 5;     // Facet field name → result buckets
 }
 
 message QueryHit {
@@ -343,4 +348,53 @@ message CountRequest {
 
 message CountResponse {
   int64 count = 1;
+}
+
+// ---- Faceted Navigation ----
+
+// Azure AI Search-style facet request. Each entry computes value counts or
+// range buckets for a single facetable field across ALL matching documents.
+message FacetRequest {
+  string field = 1;           // Field name (must be facetable in schema)
+  int32 count = 2;            // Max buckets returned (default: 10, 0 = all unique values)
+  FacetSortOrder sort = 3;    // Bucket ordering (default: COUNT_DESC)
+
+  // For numeric range bucketing (mutually exclusive with values).
+  // Divides the value space into equal-width buckets of this size.
+  double interval = 4;
+
+  // For explicit value bucketing (mutually exclusive with interval).
+  // Only these values are returned as buckets; others are ignored.
+  repeated string values = 5;
+
+  // For DATE_TIME_OFFSET fields: bucket width as calendar interval.
+  // Takes precedence over numeric interval when set on a date field.
+  DateInterval date_interval = 6;
+}
+
+enum FacetSortOrder {
+  COUNT_DESC = 0;   // Most hits first (default)
+  COUNT_ASC = 1;    // Least hits first
+  VALUE_ASC = 2;    // Alphabetical / numeric ascending
+  VALUE_DESC = 3;   // Alphabetical / numeric descending
+}
+
+enum DateInterval {
+  DATE_INTERVAL_UNSPECIFIED = 0;
+  HOUR = 1;
+  DAY = 2;
+  MONTH = 3;
+  YEAR = 4;
+  MINUTE = 5;
+}
+
+message FacetResult {
+  repeated FacetBucket buckets = 1;
+}
+
+message FacetBucket {
+  string value = 1;     // Term value or range label
+  int64 count = 2;      // Document count in this bucket
+  string from = 3;      // Range lower bound (inclusive; empty for terms facets)
+  string to = 4;        // Range upper bound (exclusive; empty for terms facets)
 }

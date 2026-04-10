@@ -42,6 +42,9 @@ public class StringFieldMapper extends FieldMapperStrategy {
 
         if (schemaField.isSortable()) {
             doc.add(getStringDocValuesField(schemaField, val));
+        } else if (schemaField.isFacetable()) {
+            // Facetable but not sortable: add DocValues at $o for facet counting
+            doc.add(getStringDocValuesField(schemaField, val));
         }
     }
 

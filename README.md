@@ -20,8 +20,9 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 ## Highlights
 
 - **12 query types** — BM25, phrase, fuzzy, prefix, query-string, KNN, hybrid RRF, term/range/geo/boolean filters
+- **Faceted navigation** — Azure AI Search–style terms, numeric range, date histogram facets on all matching docs
 - **12 gRPC RPCs** — index, query, lookup, count, delete-by-query, schema, collections, health, force-merge
-- **Schema-driven** — STRING, INT32/64, FLOAT, DOUBLE, VECTOR, GEO_POINT with per-field search/filter/sort
+- **Schema-driven** — STRING, INT32/64, FLOAT, DOUBLE, VECTOR, GEO_POINT with per-field search/filter/sort/facet
 - **NRT search** — 25ms refresh, recency decay scoring, multi-tenant isolation
 - **Agent-ready** — built-in memory tiers (WORKING/EPISODIC/SEMANTIC) with TTL sweeper for LLM agent workflows
 
@@ -81,6 +82,15 @@ stub.Index(pb.IndexRequest(collection="memories",
 
 # Search
 resp = stub.Query(pb.QueryRequest(collection="memories", text_query="dark mode", include_source=True, top_k=10))
+
+# Search with facets (Azure AI Search–style)
+resp = stub.Query(pb.QueryRequest(
+    collection="memories", text_query="dark mode", include_source=True, top_k=10,
+    facets=[pb.FacetRequest(field="category", count=5)]
+))
+for name, facet in resp.facets.items():
+    for bucket in facet.buckets:
+        print(f"  {bucket.value}: {bucket.count}")
 ```
 
 ## Build, Test & Run Examples
@@ -109,9 +119,10 @@ python smoke_test.py                                   # e2e against running ser
 
 ## Roadmap
 
+- [x] Faceted navigation — terms, numeric range/interval, date histogram (Azure AI Search–style)
 - [ ] Engram Python SDK — drop-in `EngramCheckpointer` for LangGraph
 - [ ] Learning-to-Rank — agent task outcomes feed retrieval scoring
-- [ ] Aggregations, More-Like-This, Auth (API key + mTLS)
+- [ ] More-Like-This, Auth (API key + mTLS)
 - [ ] Prometheus metrics, Helm chart, multi-node replication
 
 ## License

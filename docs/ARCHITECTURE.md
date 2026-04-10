@@ -56,6 +56,7 @@ The gRPC server uses a split I/O + handler architecture:
 - `FilterQueryBuilder` — term, range, geo-distance, geo-bbox, boolean composition
 - `SortBuilder` — field sort, geo-distance sort, relevance score
 - `HybridRrfExecutor` — BM25 + KNN fusion via Reciprocal Rank Fusion
+- `FacetExecutor` — terms, numeric range, date histogram faceting via direct DocValues iteration
 
 ### Storage
 - `IndexWriterManager` — Lucene IndexWriter with RAM buffer, merge policy/scheduler

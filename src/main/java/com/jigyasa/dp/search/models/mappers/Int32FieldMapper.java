@@ -29,6 +29,9 @@ public class Int32FieldMapper extends FieldMapperStrategy {
 
         if (schemaField.isSortable()) {
             doc.add(getSortableField(schemaField, val));
+        } else if (schemaField.isFacetable() && !schemaField.isFilterable()) {
+            // Facetable but not sortable and not filterable: add DocValues at $o
+            doc.add(getSortableField(schemaField, val));
         }
     }
 

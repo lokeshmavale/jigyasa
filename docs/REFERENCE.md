@@ -100,8 +100,8 @@ For zero-downtime snapshots, use filesystem-level snapshots (ZFS, LVM, EBS snaps
   "fields": [
     {"name": "id", "type": "STRING", "key": true, "filterable": true},
     {"name": "content", "type": "STRING", "searchable": true},
-    {"name": "category", "type": "STRING", "filterable": true, "sortable": true},
-    {"name": "importance", "type": "INT32", "filterable": true, "sortable": true},
+    {"name": "category", "type": "STRING", "filterable": true, "sortable": true, "facetable": true},
+    {"name": "importance", "type": "INT32", "filterable": true, "sortable": true, "facetable": true},
     {"name": "embedding", "type": "VECTOR", "dimensions": 384},
     {"name": "location", "type": "GEO_POINT"}
   ],
@@ -112,15 +112,18 @@ For zero-downtime snapshots, use filesystem-level snapshots (ZFS, LVM, EBS snaps
 
 ### Field Types
 
-| Type | Searchable | Filterable | Sortable | Notes |
-|---|---|---|---|---|
-| `STRING` | ✅ BM25 | ✅ term/range | ✅ | Analyzed for search, keyword for filter |
-| `INT32` | ❌ | ✅ term/range | ✅ | 32-bit integer |
-| `INT64` | ❌ | ✅ term/range | ✅ | 64-bit long |
-| `FLOAT` | ❌ | ✅ range | ✅ | 32-bit float |
-| `DOUBLE` | ❌ | ✅ range | ✅ | 64-bit double |
-| `VECTOR` | ✅ KNN | ❌ | ❌ | HNSW with optional scalar quantization |
-| `GEO_POINT` | ❌ | ✅ distance/bbox | ✅ distance | Lat/lon coordinates |
+| Type | Searchable | Filterable | Sortable | Facetable | Notes |
+|---|---|---|---|---|---|
+| `STRING` | ✅ BM25 | ✅ term/range | ✅ | ✅ terms | Analyzed for search, keyword for filter |
+| `INT32` | ❌ | ✅ term/range | ✅ | ✅ terms/range | 32-bit integer |
+| `INT64` | ❌ | ✅ term/range | ✅ | ✅ terms/range | 64-bit long |
+| `FLOAT` | ❌ | ✅ range | ✅ | ✅ terms/range | 32-bit float |
+| `DOUBLE` | ❌ | ✅ range | ✅ | ✅ terms/range | 64-bit double |
+| `DATE_TIME_OFFSET` | ❌ | ✅ range | ✅ | ✅ terms/range/date | Epoch-ms; date histogram support |
+| `VECTOR` | ✅ KNN | ❌ | ❌ | ❌ | HNSW with optional scalar quantization |
+| `GEO_POINT` | ❌ | ✅ distance/bbox | ✅ distance | ❌ | Lat/lon coordinates |
+
+All types except `VECTOR` and `GEO_POINT` support `*_COLLECTION` variants for multi-valued fields.
 
 ### Analyzers
 
@@ -143,6 +146,89 @@ Jigyasa supports **42 built-in analyzers** — 4 generic plus 38 language-specif
 
 For detailed analyzer behavior, see the [Lucene Analysis documentation](https://lucene.apache.org/core/10_4_0/analysis/common/index.html). For a working example, see [Example 07 — Multi-Language Analyzers](../examples/07-multi-language-analyzers/).
 
+### Faceted Navigation
+
+Jigyasa supports Azure AI Search–style faceted navigation. Mark fields as `facetable` in the schema, then pass `FacetRequest` entries in your query. Facets are computed over **all matching documents**, not just the top-K results.
+
+#### Schema Setup
+
+```json
+{"name": "category", "type": "STRING", "filterable": true, "facetable": true}
+{"name": "price", "type": "DOUBLE", "filterable": true, "facetable": true}
+{"name": "created", "type": "DATE_TIME_OFFSET", "sortable": true, "facetable": true}
+```
+
+#### Facet Types
+
+| Type | When Applied | Example |
+|---|---|---|
+| **Terms** | STRING, BOOLEAN, or numeric fields with no `interval` | Top categories by count |
+| **Numeric range** | Numeric field + `interval` set | Price buckets: 0-100, 100-200, ... |
+| **Date histogram** | DATE_TIME_OFFSET field + `date_interval` set | Posts per month |
+| **Explicit values** | Any facetable field + `values` list | Only show ratings 1, 2, 3, 4, 5 |
+
+#### Request Examples (gRPC / Python)
+
+```python
+# Terms facet — top 5 categories
+pb.FacetRequest(field="category", count=5)
+
+# Terms facet — sorted alphabetically
+pb.FacetRequest(field="category", count=10, sort=pb.VALUE_ASC)
+
+# Numeric range — price buckets of 100
+pb.FacetRequest(field="price", interval=100)
+
+# Date histogram — monthly buckets
+pb.FacetRequest(field="created", date_interval=pb.MONTH)
+
+# Explicit values — only these ratings
+pb.FacetRequest(field="rating", values=["1", "2", "3", "4", "5"])
+```
+
+#### Response Format
+
+Facets are returned in `QueryResponse.facets` as a map of field name → `FacetResult`:
+
+```json
+{
+  "facets": {
+    "category": {
+      "buckets": [
+        {"value": "Electronics", "count": 42},
+        {"value": "Books", "count": 31},
+        {"value": "Toys", "count": 15}
+      ]
+    },
+    "price": {
+      "buckets": [
+        {"value": "0-100", "count": 28, "from": "0", "to": "100"},
+        {"value": "100-200", "count": 35, "from": "100", "to": "200"}
+      ]
+    }
+  }
+}
+```
+
+#### Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `field` | (required) | Must be marked `facetable` in schema |
+| `count` | `10` | Max buckets. Set 0 for all unique values |
+| `sort` | `COUNT_DESC` | `COUNT_DESC`, `COUNT_ASC`, `VALUE_ASC`, `VALUE_DESC` |
+| `interval` | (none) | Numeric range bucket width (mutually exclusive with `values`) |
+| `values` | (none) | Explicit value list (mutually exclusive with `interval`) |
+| `date_interval` | (none) | `MINUTE`, `HOUR`, `DAY`, `MONTH`, `YEAR` |
+
+#### Internals
+
+- **All matching docs** are counted (not just top-K), matching Azure AI Search behavior
+- **MatchAllDocs** queries use an optimized full DocValues column scan (no BitSet allocation)
+- **Filtered queries** use Lucene's `FacetsCollectorManager` for single-pass collection
+- **Pagination** (`search_after`) does not affect facet counts — they always reflect the full query
+- **Hybrid search** + facets is not supported (clear error returned)
+
 ## API Reference
 
 gRPC API defined in [`dpSearch.proto`](../src/main/proto/dpSearch.proto).
@@ -150,7 +236,7 @@ gRPC API defined in [`dpSearch.proto`](../src/main/proto/dpSearch.proto).
 | RPC | Description |
 |---|---|
 | `Index` | Bulk index/update/delete documents |
-| `Query` | Search with any combination of query types, filters, sort |
+| `Query` | Search with any combination of query types, filters, sort, facets |
 | `Lookup` | Get documents by key (point lookup) |
 | `Count` | Count documents matching filters |
 | `DeleteByQuery` | Delete documents matching filters |

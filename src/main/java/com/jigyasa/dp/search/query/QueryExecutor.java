@@ -1,6 +1,8 @@
 package com.jigyasa.dp.search.query;
 
 import com.jigyasa.dp.search.protocol.SearchAfterToken;
+import org.apache.lucene.facet.FacetsCollector;
+import org.apache.lucene.facet.FacetsCollectorManager;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -70,6 +72,42 @@ public class QueryExecutor {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid search_after token value '" + value + "' for sort type " + type, e);
         }
+    }
+
+    /**
+     * Executes search with FacetsCollector in a single pass using FacetsCollectorManager.
+     * Returns both TopDocs and the populated FacetsCollector.
+     * Preserves Sort and SearchAfter behavior via Lucene's built-in support.
+     *
+     * IMPORTANT: Facet counts always reflect ALL matching docs (not just the page).
+     * When searchAfter is used, we run a separate non-paged search for facets so that
+     * the FacetsCollector sees the full result set.
+     */
+    public FacetsCollectorManager.FacetsResult executeWithFacets(
+            IndexSearcher searcher, Query query, int numHits,
+            Sort sort, SearchAfterToken searchAfter) throws IOException {
+        FacetsCollectorManager fcManager = new FacetsCollectorManager();
+
+        if (searchAfter != null && hasValidToken(searchAfter)) {
+            // searchAfter paging: facets must still reflect ALL matches.
+            // Run a full (non-paged) facet collection, then a paged TopDocs search.
+            FacetsCollectorManager.FacetsResult fullResult =
+                    (sort != null)
+                            ? FacetsCollectorManager.search(searcher, query, numHits, sort, fcManager)
+                            : FacetsCollectorManager.search(searcher, query, numHits, fcManager);
+
+            // Now run the paged search for correct TopDocs
+            ScoreDoc after = reconstructScoreDoc(searchAfter, sort);
+            TopDocs pagedTopDocs = (sort != null)
+                    ? searcher.searchAfter(after, query, numHits, sort)
+                    : searcher.searchAfter(after, query, numHits);
+
+            return new FacetsCollectorManager.FacetsResult(pagedTopDocs, fullResult.facetsCollector());
+        }
+
+        return (sort != null)
+                ? FacetsCollectorManager.search(searcher, query, numHits, sort, fcManager)
+                : FacetsCollectorManager.search(searcher, query, numHits, fcManager);
     }
 
     private boolean hasValidToken(SearchAfterToken token) {

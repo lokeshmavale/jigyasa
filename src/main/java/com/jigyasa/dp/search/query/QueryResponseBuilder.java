@@ -3,6 +3,7 @@ package com.jigyasa.dp.search.query;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jigyasa.dp.search.models.InitializedIndexSchema;
+import com.jigyasa.dp.search.protocol.FacetResult;
 import com.jigyasa.dp.search.protocol.QueryHit;
 import com.jigyasa.dp.search.protocol.QueryResponse;
 import com.jigyasa.dp.search.protocol.SearchAfterToken;
@@ -17,7 +18,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 
@@ -46,6 +49,15 @@ public class QueryResponseBuilder {
                                 InitializedIndexSchema schema, boolean includeSource,
                                 int offset, int topK, float minScore,
                                 List<String> sourceFields) throws Exception {
+        return build(topDocs, searcher, schema, includeSource, offset, topK, minScore,
+                sourceFields, Collections.emptyMap());
+    }
+
+    public QueryResponse build(TopDocs topDocs, IndexSearcher searcher,
+                                InitializedIndexSchema schema, boolean includeSource,
+                                int offset, int topK, float minScore,
+                                List<String> sourceFields,
+                                Map<String, FacetResult> facets) throws Exception {
         QueryResponse.Builder response = QueryResponse.newBuilder();
         response.setTotalHits(topDocs.totalHits.value());
         response.setTotalHitsExact(
@@ -119,6 +131,11 @@ public class QueryResponseBuilder {
             }
 
             response.setNextSearchAfter(tokenBuilder.build());
+        }
+
+        // Attach facet results
+        if (facets != null && !facets.isEmpty()) {
+            response.putAllFacets(facets);
         }
 
         return response.build();

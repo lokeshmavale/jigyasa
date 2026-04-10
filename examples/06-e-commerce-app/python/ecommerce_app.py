@@ -57,10 +57,10 @@ def build_schema():
             {"name": "id", "type": "STRING", "key": True, "filterable": True},
             {"name": "title", "type": "STRING", "searchable": True, "sortable": True},
             {"name": "description", "type": "STRING", "searchable": True},
-            {"name": "category", "type": "STRING", "filterable": True, "sortable": True},
-            {"name": "brand", "type": "STRING", "filterable": True},
-            {"name": "price", "type": "DOUBLE", "filterable": True, "sortable": True},
-            {"name": "rating", "type": "DOUBLE", "filterable": True, "sortable": True},
+            {"name": "category", "type": "STRING", "filterable": True, "sortable": True, "facetable": True},
+            {"name": "brand", "type": "STRING", "filterable": True, "facetable": True},
+            {"name": "price", "type": "DOUBLE", "filterable": True, "sortable": True, "facetable": True},
+            {"name": "rating", "type": "DOUBLE", "filterable": True, "sortable": True, "facetable": True},
             {"name": "in_stock", "type": "INT32", "filterable": True},
             {"name": "location", "type": "GEO_POINT", "filterable": True},
         ]
@@ -283,6 +283,46 @@ def product_count(stub):
     print()
 
 
+def faceted_search(stub):
+    """Faceted search: search with category and price facets."""
+    query = input("  Search query (or Enter for all products): ").strip()
+
+    facets = [
+        pb.FacetRequest(field="category", count=10, sort=pb.COUNT_DESC),
+        pb.FacetRequest(field="price", interval=50),
+    ]
+
+    if query:
+        resp = stub.Query(pb.QueryRequest(
+            collection=COLLECTION,
+            text_query=query,
+            top_k=5,
+            include_source=True,
+            facets=facets,
+        ))
+    else:
+        resp = stub.Query(pb.QueryRequest(
+            collection=COLLECTION,
+            top_k=5,
+            include_source=True,
+            facets=facets,
+        ))
+
+    display_results(resp)
+
+    # Display facets
+    if resp.facets:
+        print("  --- Facets ---")
+        for field_name, facet_result in resp.facets.items():
+            print(f"\n  {field_name}:")
+            for bucket in facet_result.buckets:
+                if bucket.from_field or bucket.to:
+                    print(f"    {bucket.value} ({bucket.from_field}-{bucket.to}): {bucket.count}")
+                else:
+                    print(f"    {bucket.value}: {bucket.count}")
+    print()
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -294,6 +334,7 @@ MENU = """
 [4] Find nearby stores
 [5] Advanced search
 [6] Product count
+[7] Faceted search
 [0] Exit
 ======================================"""
 
@@ -311,6 +352,7 @@ def main():
         "4": find_nearby,
         "5": advanced_search,
         "6": product_count,
+        "7": faceted_search,
     }
 
     while True:
