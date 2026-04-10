@@ -288,6 +288,20 @@ All benchmarks run on **Linux containers** with equal resources: **4 CPUs, 12GB 
 
 > Reproduce: `python benchmarks/benchmark_1m_sequential.py`
 
+### Facets / Aggregations (1M docs, e-commerce dataset)
+
+| Facet Type | Jigyasa p50 | ES 8.13 p50 | Speedup | Jigyasa p99 | ES p99 |
+|---|---|---|---|---|---|
+| Terms (1 field, 10 values) | **13.58ms** | 47.89ms | **3.5x** | 20.89ms | 108.79ms |
+| Terms (3 fields) | **36.09ms** | 49.78ms | **1.4x** | 42.91ms | 72.46ms |
+| Terms + text query | **8.94ms** | 28.85ms | **3.2x** | 14.07ms | 54.91ms |
+| Numeric range/histogram | **37.12ms** | 61.70ms | **1.7x** | 68.72ms | 87.90ms |
+| Numeric terms | **22.34ms** | 35.60ms | **1.6x** | 34.28ms | 64.31ms |
+| Text + filter + 3 facets | **12.56ms** | 13.06ms | **1.0x** | 22.30ms | 41.51ms |
+| **Average** | **21.77ms** | **39.48ms** | **1.8x** | **33.86ms** | **71.65ms** |
+
+> Reproduce: `python benchmarks/benchmark_facets.py`
+
 ## Performance Tuning
 
 | Setting | Value | Rationale |

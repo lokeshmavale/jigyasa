@@ -3,42 +3,25 @@ package com.jigyasa.dp.search.handlers;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
 import com.jigyasa.dp.search.models.HandlerHelpers;
 import com.jigyasa.dp.search.models.InitializedIndexSchema;
-import com.jigyasa.dp.search.models.mappers.FieldMapperStrategy;
 import com.jigyasa.dp.search.protocol.LookupRequest;
 import com.jigyasa.dp.search.protocol.LookupResponse;
 import com.jigyasa.dp.search.services.RequestHandlerBase;
 import com.jigyasa.dp.search.utils.SourceVisitor;
 import io.grpc.stub.StreamObserver;
-import lombok.Getter;
-import org.apache.lucene.index.FieldInfo;
-import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.search.BooleanClause;
-import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.util.BytesRef;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, LookupResponse> {
-
-    private static StoredFieldVisitor getVisitor() {
-        return new StoredFieldVisitor() {
-            @Getter
-            byte[] src;
-
-            @Override
-            public void binaryField(FieldInfo fieldInfo, byte[] value) {
-                this.src = value;
-            }
-
-            @Override
-            public Status needsField(FieldInfo fieldInfo) {
-                return FieldMapperStrategy.SOURCE_FIELD_NAME.equals(fieldInfo.name) ? Status.YES : Status.NO;
-            }
-        };
-    }
 
     private final CollectionRegistry registry;
 
@@ -53,19 +36,29 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
         try (var lease = helpers.indexSearcherManager().leaseSearcher()) {
             InitializedIndexSchema initializedSchema = helpers.indexSchemaManager().getIndexSchema().getInitializedSchema();
             String keyFieldName = initializedSchema.getKeyFieldName();
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
-            builder.setMinimumNumberShouldMatch(1);
-            for (String s : req.getDocKeysList()) {
-                builder.add(new TermQuery(new Term(keyFieldName, s)), BooleanClause.Occur.SHOULD);
+            int keyCount = req.getDocKeysCount();
+
+            // Use TermInSetQuery for batch lookups (O(1) per segment via automaton),
+            // single TermQuery for single-key lookups.
+            Query query;
+            if (keyCount == 1) {
+                query = new TermQuery(new Term(keyFieldName, req.getDocKeys(0)));
+            } else {
+                List<BytesRef> terms = new ArrayList<>(keyCount);
+                for (String key : req.getDocKeysList()) {
+                    terms.add(new BytesRef(key));
+                }
+                query = new TermInSetQuery(keyFieldName, terms);
             }
 
-            TopDocs search = lease.searcher().search(builder.build(), req.getDocKeysCount());
+            TopDocs search = lease.searcher().search(query, keyCount);
 
             LookupResponse.Builder response = LookupResponse.newBuilder();
+            var storedFields = lease.searcher().storedFields();
+            SourceVisitor visitor = new SourceVisitor();
             for (ScoreDoc scoreDoc : search.scoreDocs) {
-                SourceVisitor visitor = new SourceVisitor();
-                lease.searcher().storedFields().document(scoreDoc.doc, visitor);
-
+                visitor.reset();
+                storedFields.document(scoreDoc.doc, visitor);
                 if (visitor.getSrc() != null) {
                     response.addDocuments(new String(visitor.getSrc(), StandardCharsets.UTF_8));
                 }
@@ -73,7 +66,7 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
 
             observer.onNext(response.build());
             observer.onCompleted();
-        } catch (Exception e) {
+        } catch (IOException e) {
             observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
         }
     }

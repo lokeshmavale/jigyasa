@@ -171,6 +171,8 @@ public class FileAppender implements TranslogAppender {
 
     @Override
     public void append(IndexRequest request) throws IOException {
+        // Serialize BEFORE acquiring lock — protobuf serialization is CPU-bound
+        // and should not block other threads waiting to write.
         final byte[] byteArray = request.toByteArray();
         synchronized (fileOpsLock) {
             if (totalBytesWritten + byteArray.length > MAX_FILE_SIZE) {
@@ -239,6 +241,7 @@ public class FileAppender implements TranslogAppender {
             }
         }
         closeOpenFiles();
+        checkpointManager.closeChannel();
         log.info("Translog FileAppender shut down");
     }
 }

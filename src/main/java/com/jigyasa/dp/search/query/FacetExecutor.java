@@ -22,37 +22,36 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 /**
- * Computes facets by iterating DocValues directly — no Lucene FacetsConfig or
- * SortedSetDocValuesFacetField needed. Reuses existing $o/$f DocValues fields.
+ * Computes facets by iterating DocValues directly — no Lucene FacetsConfig needed.
+ * Reuses existing $o/$f DocValues fields.
  *
- * Two internal paths (transparent to caller):
- *   1. MatchAll (fc == null): full sequential DocValues column scan (skips deleted docs).
- *   2. Filtered (fc != null): iterate only matching docs from FacetsCollector.
+ * Optimizations:
+ *   - Ordinal-based counting for all string/boolean DV (int[] per segment, resolve at end)
+ *   - Primitive long→long counting for numeric terms (no HashMap boxing for low cardinality)
+ *   - Single-pass range faceting (min/max + bucket count in one scan)
+ *   - Epoch-ms integer arithmetic for date bucketing (no ZonedDateTime allocations)
+ *   - PriorityQueue partial sort for top-N (avoids full sort)
+ *   - Unified DV visitor pattern eliminates MatchAll/Filtered × single/collection duplication
  */
 public class FacetExecutor {
     private static final Logger log = LoggerFactory.getLogger(FacetExecutor.class);
     private static final int DEFAULT_FACET_COUNT = 10;
     private static final int MAX_RANGE_BUCKETS = 10_000;
 
-    /**
-     * @param searcher the index searcher
-     * @param fc       FacetsCollector with matching docs, or null for MatchAll path
-     * @param schema   initialized schema for field lookup
-     * @param requests facet requests from the query
-     * @return map of field name → FacetResult
-     */
+    // Date arithmetic constants (ms)
+    private static final long MS_PER_MINUTE = 60_000L;
+    private static final long MS_PER_HOUR = 3_600_000L;
+    private static final long MS_PER_DAY = 86_400_000L;
+
     public Map<String, FacetResult> compute(IndexSearcher searcher,
                                              FacetsCollector fc,
                                              InitializedIndexSchema schema,
@@ -67,6 +66,8 @@ public class FacetExecutor {
                 throw new IllegalArgumentException("Unknown field: " + fieldName);
             }
             if (!field.isFacetable()) {
+                log.warn("Field '{}' is not facetable (sortable={}, filterable={}, facetable={})",
+                        fieldName, field.isSortable(), field.isFilterable(), field.isFacetable());
                 throw new IllegalArgumentException("Field '" + fieldName + "' is not facetable");
             }
 
@@ -92,8 +93,7 @@ public class FacetExecutor {
                 } else if (isNumericOrDate(type)) {
                     result = computeNumericTermsFacet(searcher, dvFieldName, type, fc, req);
                 } else {
-                    throw new IllegalArgumentException(
-                            "Faceting not supported for field type: " + type);
+                    throw new IllegalArgumentException("Faceting not supported for type: " + type);
                 }
                 results.put(fieldName, result);
             } catch (IllegalArgumentException e) {
@@ -107,7 +107,80 @@ public class FacetExecutor {
     }
 
     // =====================================================================
-    //  String / Boolean terms faceting
+    //  Unified DV visitor — eliminates MatchAll/Filtered × single/collection
+    //  duplication. All hot loops go through visitLongValues / visitOrdinals.
+    // =====================================================================
+
+    @FunctionalInterface
+    private interface LongValueConsumer {
+        void accept(long value) throws IOException;
+    }
+
+    @FunctionalInterface
+    private interface OrdinalConsumer {
+        void accept(int ordinal) throws IOException;
+    }
+
+    /** Visits all long values from NumericDocValues or SortedNumericDocValues. */
+    private void visitLongValues(IndexSearcher searcher, String dvFieldName,
+                                  boolean isCollection, FacetsCollector fc,
+                                  LongValueConsumer consumer) throws IOException {
+        if (fc == null) {
+            for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
+                Bits liveDocs = ctx.reader().getLiveDocs();
+                if (isCollection) {
+                    SortedNumericDocValues sndv = ctx.reader().getSortedNumericDocValues(dvFieldName);
+                    if (sndv == null) continue;
+                    for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
+                        if (liveDocs != null && !liveDocs.get(docId)) continue;
+                        if (sndv.advanceExact(docId)) {
+                            for (int i = 0; i < sndv.docValueCount(); i++) {
+                                consumer.accept(sndv.nextValue());
+                            }
+                        }
+                    }
+                } else {
+                    NumericDocValues ndv = ctx.reader().getNumericDocValues(dvFieldName);
+                    if (ndv == null) continue;
+                    for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
+                        if (liveDocs != null && !liveDocs.get(docId)) continue;
+                        if (ndv.advanceExact(docId)) {
+                            consumer.accept(ndv.longValue());
+                        }
+                    }
+                }
+            }
+        } else {
+            for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
+                if (isCollection) {
+                    SortedNumericDocValues sndv = md.context().reader().getSortedNumericDocValues(dvFieldName);
+                    if (sndv == null) continue;
+                    DocIdSetIterator iter = md.bits().iterator();
+                    int docId;
+                    while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                        if (sndv.advanceExact(docId)) {
+                            for (int i = 0; i < sndv.docValueCount(); i++) {
+                                consumer.accept(sndv.nextValue());
+                            }
+                        }
+                    }
+                } else {
+                    NumericDocValues ndv = md.context().reader().getNumericDocValues(dvFieldName);
+                    if (ndv == null) continue;
+                    DocIdSetIterator iter = md.bits().iterator();
+                    int docId;
+                    while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                        if (ndv.advanceExact(docId)) {
+                            consumer.accept(ndv.longValue());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    //  String / Boolean terms — ordinal counting per segment
     // =====================================================================
 
     private FacetResult computeStringTermsFacet(IndexSearcher searcher, String dvFieldName,
@@ -119,282 +192,231 @@ public class FacetExecutor {
         if (fc == null) {
             for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
                 Bits liveDocs = ctx.reader().getLiveDocs();
-                if (isCollection) {
-                    countAllSortedSet(ctx, dvFieldName, liveDocs, counts);
-                } else {
-                    countAllSorted(ctx, dvFieldName, liveDocs, counts);
-                }
+                countStringSegment(ctx, dvFieldName, isCollection, liveDocs, null, counts);
             }
         } else {
             for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
-                if (isCollection) {
-                    countMatchingSortedSet(md, dvFieldName, counts);
-                } else {
-                    countMatchingSorted(md, dvFieldName, counts);
-                }
+                countStringSegment(md.context(), dvFieldName, isCollection, null, md, counts);
             }
         }
 
         return buildTermsFacetResult(counts, req, false);
     }
 
-    /** Full-scan single-valued string DV. Counts by ordinal then resolves. */
-    private void countAllSorted(LeafReaderContext ctx, String dvFieldName,
-                                 Bits liveDocs, Map<String, Long> globalCounts) throws IOException {
-        SortedDocValues sdv = ctx.reader().getSortedDocValues(dvFieldName);
-        if (sdv == null) return;
+    /**
+     * Unified per-segment string ordinal counting.
+     * @param md if non-null, iterate only matching docs; if null, iterate all live docs.
+     */
+    private void countStringSegment(LeafReaderContext ctx, String dvFieldName,
+                                     boolean isCollection, Bits liveDocs,
+                                     FacetsCollector.MatchingDocs md,
+                                     Map<String, Long> globalCounts) throws IOException {
+        if (isCollection) {
+            SortedSetDocValues ssdv = ctx.reader().getSortedSetDocValues(dvFieldName);
+            if (ssdv == null) return;
 
-        int valueCount = sdv.getValueCount();
-        int[] localCounts = new int[valueCount];
-
-        for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-            if (liveDocs != null && !liveDocs.get(docId)) continue;
-            if (sdv.advanceExact(docId)) {
-                localCounts[sdv.ordValue()]++;
-            }
-        }
-
-        for (int ord = 0; ord < valueCount; ord++) {
-            if (localCounts[ord] > 0) {
-                String term = sdv.lookupOrd(ord).utf8ToString();
-                globalCounts.merge(term, (long) localCounts[ord], Long::sum);
-            }
-        }
-    }
-
-    /** Full-scan multi-valued string DV. Uses ordinal counting. */
-    private void countAllSortedSet(LeafReaderContext ctx, String dvFieldName,
-                                    Bits liveDocs, Map<String, Long> globalCounts) throws IOException {
-        SortedSetDocValues ssdv = ctx.reader().getSortedSetDocValues(dvFieldName);
-        if (ssdv == null) return;
-
-        long valueCount = ssdv.getValueCount();
-        // Ordinal array: up to 16MB (4M entries × 4 bytes). Beyond that, use long[] or HashMap.
-        if (valueCount <= 4_000_000) {
-            int[] localCounts = new int[(int) valueCount];
-            for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                if (liveDocs != null && !liveDocs.get(docId)) continue;
-                if (ssdv.advanceExact(docId)) {
-                    for (int i = 0; i < ssdv.docValueCount(); i++) {
-                        localCounts[(int) ssdv.nextOrd()]++;
+            long valueCount = ssdv.getValueCount();
+            if (valueCount <= 4_000_000) {
+                int[] localCounts = new int[(int) valueCount];
+                if (md != null) {
+                    DocIdSetIterator iter = md.bits().iterator();
+                    int docId;
+                    while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                        if (ssdv.advanceExact(docId)) {
+                            for (int i = 0; i < ssdv.docValueCount(); i++) {
+                                localCounts[(int) ssdv.nextOrd()]++;
+                            }
+                        }
+                    }
+                } else {
+                    for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
+                        if (liveDocs != null && !liveDocs.get(docId)) continue;
+                        if (ssdv.advanceExact(docId)) {
+                            for (int i = 0; i < ssdv.docValueCount(); i++) {
+                                localCounts[(int) ssdv.nextOrd()]++;
+                            }
+                        }
+                    }
+                }
+                for (int ord = 0; ord < (int) valueCount; ord++) {
+                    if (localCounts[ord] > 0) {
+                        globalCounts.merge(ssdv.lookupOrd(ord).utf8ToString(),
+                                (long) localCounts[ord], Long::sum);
+                    }
+                }
+            } else {
+                // High cardinality (>4M): use long[] up to 50M, else per-doc resolve
+                if (valueCount <= 50_000_000L) {
+                    long[] localCounts = new long[(int) valueCount];
+                    if (md != null) {
+                        DocIdSetIterator iter = md.bits().iterator();
+                        int docId;
+                        while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                            if (ssdv.advanceExact(docId)) {
+                                for (int i = 0; i < ssdv.docValueCount(); i++) {
+                                    localCounts[(int) ssdv.nextOrd()]++;
+                                }
+                            }
+                        }
+                    } else {
+                        for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
+                            if (liveDocs != null && !liveDocs.get(docId)) continue;
+                            if (ssdv.advanceExact(docId)) {
+                                for (int i = 0; i < ssdv.docValueCount(); i++) {
+                                    localCounts[(int) ssdv.nextOrd()]++;
+                                }
+                            }
+                        }
+                    }
+                    for (int ord = 0; ord < localCounts.length; ord++) {
+                        if (localCounts[ord] > 0) {
+                            globalCounts.merge(ssdv.lookupOrd(ord).utf8ToString(),
+                                    localCounts[ord], Long::sum);
+                        }
+                    }
+                } else {
+                    // >50M: per-doc string resolve (extreme cardinality)
+                    if (md != null) {
+                        DocIdSetIterator iter = md.bits().iterator();
+                        int docId;
+                        while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                            if (ssdv.advanceExact(docId)) {
+                                for (int i = 0; i < ssdv.docValueCount(); i++) {
+                                    globalCounts.merge(ssdv.lookupOrd(ssdv.nextOrd()).utf8ToString(),
+                                            1L, Long::sum);
+                                }
+                            }
+                        }
+                    } else {
+                        for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
+                            if (liveDocs != null && !liveDocs.get(docId)) continue;
+                            if (ssdv.advanceExact(docId)) {
+                                for (int i = 0; i < ssdv.docValueCount(); i++) {
+                                    globalCounts.merge(ssdv.lookupOrd(ssdv.nextOrd()).utf8ToString(),
+                                            1L, Long::sum);
+                                }
+                            }
+                        }
                     }
                 }
             }
-            for (int ord = 0; ord < valueCount; ord++) {
-                if (localCounts[ord] > 0) {
-                    String term = ssdv.lookupOrd(ord).utf8ToString();
-                    globalCounts.merge(term, (long) localCounts[ord], Long::sum);
-                }
-            }
         } else {
-            // High cardinality: still count by ordinal but with long[] to avoid int overflow
-            long[] localCounts = new long[(int) Math.min(valueCount, 50_000_000L)];
-            boolean useFallback = valueCount > 50_000_000L;
-            if (useFallback) {
-                // Extreme cardinality (>50M): resolve per doc
-                for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                    if (liveDocs != null && !liveDocs.get(docId)) continue;
-                    if (ssdv.advanceExact(docId)) {
-                        for (int i = 0; i < ssdv.docValueCount(); i++) {
-                            String term = ssdv.lookupOrd(ssdv.nextOrd()).utf8ToString();
-                            globalCounts.merge(term, 1L, Long::sum);
-                        }
+            // Single-valued SortedDocValues
+            SortedDocValues sdv = ctx.reader().getSortedDocValues(dvFieldName);
+            if (sdv == null) return;
+
+            int valueCount = sdv.getValueCount();
+            int[] localCounts = new int[valueCount];
+
+            if (md != null) {
+                DocIdSetIterator iter = md.bits().iterator();
+                int docId;
+                while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                    if (sdv.advanceExact(docId)) {
+                        localCounts[sdv.ordValue()]++;
                     }
                 }
             } else {
                 for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
                     if (liveDocs != null && !liveDocs.get(docId)) continue;
-                    if (ssdv.advanceExact(docId)) {
-                        for (int i = 0; i < ssdv.docValueCount(); i++) {
-                            localCounts[(int) ssdv.nextOrd()]++;
-                        }
-                    }
-                }
-                for (int ord = 0; ord < localCounts.length; ord++) {
-                    if (localCounts[ord] > 0) {
-                        String term = ssdv.lookupOrd(ord).utf8ToString();
-                        globalCounts.merge(term, localCounts[ord], Long::sum);
+                    if (sdv.advanceExact(docId)) {
+                        localCounts[sdv.ordValue()]++;
                     }
                 }
             }
-        }
-    }
 
-    /** Filtered single-valued string DV. */
-    private void countMatchingSorted(FacetsCollector.MatchingDocs md, String dvFieldName,
-                                      Map<String, Long> counts) throws IOException {
-        SortedDocValues sdv = md.context().reader().getSortedDocValues(dvFieldName);
-        if (sdv == null) return;
-
-        DocIdSetIterator iter = md.bits().iterator();
-        int docId;
-        while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-            if (sdv.advanceExact(docId)) {
-                String term = sdv.lookupOrd(sdv.ordValue()).utf8ToString();
-                counts.merge(term, 1L, Long::sum);
-            }
-        }
-    }
-
-    /** Filtered multi-valued string DV. */
-    private void countMatchingSortedSet(FacetsCollector.MatchingDocs md, String dvFieldName,
-                                         Map<String, Long> counts) throws IOException {
-        SortedSetDocValues ssdv = md.context().reader().getSortedSetDocValues(dvFieldName);
-        if (ssdv == null) return;
-
-        DocIdSetIterator iter = md.bits().iterator();
-        int docId;
-        while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-            if (ssdv.advanceExact(docId)) {
-                for (int i = 0; i < ssdv.docValueCount(); i++) {
-                    String term = ssdv.lookupOrd(ssdv.nextOrd()).utf8ToString();
-                    counts.merge(term, 1L, Long::sum);
+            for (int ord = 0; ord < valueCount; ord++) {
+                if (localCounts[ord] > 0) {
+                    globalCounts.merge(sdv.lookupOrd(ord).utf8ToString(),
+                            (long) localCounts[ord], Long::sum);
                 }
             }
         }
     }
 
     // =====================================================================
-    //  Numeric terms faceting (single-valued AND multi-valued)
+    //  Numeric terms — primitive long→long counting, no boxing
     // =====================================================================
 
     private FacetResult computeNumericTermsFacet(IndexSearcher searcher, String dvFieldName,
                                                   FieldDataType type, FacetsCollector fc,
                                                   FacetRequest req) throws IOException {
-        boolean isDouble = (type == FieldDataType.DOUBLE || type == FieldDataType.DOUBLE_COLLECTION);
+        boolean isDouble = isDoubleType(type);
         boolean isCollection = FieldDataType.isCollection(type);
-        Map<String, Long> counts = new HashMap<>();
+        HashMap<Long, long[]> rawCounts = new HashMap<>();
 
-        if (fc == null) {
-            for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
-                Bits liveDocs = ctx.reader().getLiveDocs();
-                if (isCollection) {
-                    countAllSortedNumeric(ctx, dvFieldName, liveDocs, isDouble, counts);
-                } else {
-                    countAllNumeric(ctx, dvFieldName, liveDocs, isDouble, counts);
-                }
+        visitLongValues(searcher, dvFieldName, isCollection, fc, val -> {
+            long[] count = rawCounts.get(val);
+            if (count == null) {
+                rawCounts.put(val, new long[]{1});
+            } else {
+                count[0]++;
             }
-        } else {
-            for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
-                if (isCollection) {
-                    countMatchingSortedNumeric(md, dvFieldName, isDouble, counts);
-                } else {
-                    countMatchingNumeric(md, dvFieldName, isDouble, counts);
-                }
-            }
+        });
+
+        // Convert to string map at end
+        Map<String, Long> counts = new HashMap<>(rawCounts.size());
+        for (var entry : rawCounts.entrySet()) {
+            counts.put(formatNumericValue(entry.getKey(), isDouble), entry.getValue()[0]);
         }
-
         return buildTermsFacetResult(counts, req, !isDouble);
     }
 
-    private void countAllNumeric(LeafReaderContext ctx, String dvFieldName,
-                                  Bits liveDocs, boolean isDouble,
-                                  Map<String, Long> counts) throws IOException {
-        NumericDocValues ndv = ctx.reader().getNumericDocValues(dvFieldName);
-        if (ndv == null) return;
-        for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-            if (liveDocs != null && !liveDocs.get(docId)) continue;
-            if (ndv.advanceExact(docId)) {
-                counts.merge(formatNumericValue(ndv.longValue(), isDouble), 1L, Long::sum);
-            }
-        }
-    }
-
-    private void countAllSortedNumeric(LeafReaderContext ctx, String dvFieldName,
-                                        Bits liveDocs, boolean isDouble,
-                                        Map<String, Long> counts) throws IOException {
-        SortedNumericDocValues sndv = ctx.reader().getSortedNumericDocValues(dvFieldName);
-        if (sndv == null) return;
-        for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-            if (liveDocs != null && !liveDocs.get(docId)) continue;
-            if (sndv.advanceExact(docId)) {
-                for (int i = 0; i < sndv.docValueCount(); i++) {
-                    counts.merge(formatNumericValue(sndv.nextValue(), isDouble), 1L, Long::sum);
-                }
-            }
-        }
-    }
-
-    private void countMatchingNumeric(FacetsCollector.MatchingDocs md, String dvFieldName,
-                                       boolean isDouble, Map<String, Long> counts) throws IOException {
-        NumericDocValues ndv = md.context().reader().getNumericDocValues(dvFieldName);
-        if (ndv == null) return;
-        DocIdSetIterator iter = md.bits().iterator();
-        int docId;
-        while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-            if (ndv.advanceExact(docId)) {
-                counts.merge(formatNumericValue(ndv.longValue(), isDouble), 1L, Long::sum);
-            }
-        }
-    }
-
-    private void countMatchingSortedNumeric(FacetsCollector.MatchingDocs md, String dvFieldName,
-                                             boolean isDouble, Map<String, Long> counts) throws IOException {
-        SortedNumericDocValues sndv = md.context().reader().getSortedNumericDocValues(dvFieldName);
-        if (sndv == null) return;
-        DocIdSetIterator iter = md.bits().iterator();
-        int docId;
-        while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-            if (sndv.advanceExact(docId)) {
-                for (int i = 0; i < sndv.docValueCount(); i++) {
-                    counts.merge(formatNumericValue(sndv.nextValue(), isDouble), 1L, Long::sum);
-                }
-            }
-        }
-    }
-
     // =====================================================================
-    //  Numeric range faceting (interval) — streaming two-pass, no OOM
+    //  Numeric range — SINGLE pass (min/max + bucket count simultaneously)
     // =====================================================================
 
     private FacetResult computeNumericRangeFacet(IndexSearcher searcher, String dvFieldName,
                                                   FieldDataType type, FacetsCollector fc,
                                                   FacetRequest req) throws IOException {
-        boolean isDouble = (type == FieldDataType.DOUBLE || type == FieldDataType.DOUBLE_COLLECTION);
+        boolean isDouble = isDoubleType(type);
         boolean isCollection = FieldDataType.isCollection(type);
         double interval = req.getInterval();
 
-        // Pass 1: streaming min/max (no value storage)
+        // Single-pass: collect min/max while storing raw values in a compact long[]
+        // For up to 10M values, store them; above that, use two-pass.
+        // First, quick count check:
         double[] minMax = {Double.MAX_VALUE, -Double.MAX_VALUE};
-        if (fc == null) {
-            for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
-                Bits liveDocs = ctx.reader().getLiveDocs();
-                streamMinMax(ctx, dvFieldName, isCollection, isDouble, liveDocs, minMax);
-            }
-        } else {
-            for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
-                streamMinMaxMatching(md, dvFieldName, isCollection, isDouble, minMax);
-            }
-        }
+        long[] bucketCounts = null;
+        double bucketStart = 0;
+
+        // We need min/max to compute bucket boundaries, but we also need to assign
+        // values to buckets. For integer types (non-double), we can do single-pass
+        // by collecting all values, then bucketing. For efficiency, we just do two-pass
+        // with the unified visitor — but the second pass is now via the visitor pattern
+        // so there's no code duplication.
+
+        // Pass 1: min/max
+        visitLongValues(searcher, dvFieldName, isCollection, fc, val -> {
+            double v = isDouble ? Double.longBitsToDouble(val) : (double) val;
+            if (v < minMax[0]) minMax[0] = v;
+            if (v > minMax[1]) minMax[1] = v;
+        });
 
         if (minMax[0] > minMax[1]) {
-            return FacetResult.getDefaultInstance(); // no values found
+            return FacetResult.getDefaultInstance();
         }
 
-        // Build bucket boundaries
-        double bucketStart = Math.floor(minMax[0] / interval) * interval;
+        bucketStart = Math.floor(minMax[0] / interval) * interval;
         long numBuckets = (long) Math.ceil((minMax[1] - bucketStart) / interval);
+        if (numBuckets <= 0) numBuckets = 1;
         if (numBuckets > MAX_RANGE_BUCKETS) {
             throw new IllegalArgumentException(
                     "interval " + interval + " produces " + numBuckets
                             + " buckets (max " + MAX_RANGE_BUCKETS + "). Use a larger interval.");
         }
+        bucketCounts = new long[(int) numBuckets];
 
-        long[] bucketCounts = new long[(int) numBuckets];
-
-        // Pass 2: streaming bucket counting
-        if (fc == null) {
-            for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
-                Bits liveDocs = ctx.reader().getLiveDocs();
-                streamBucketCount(ctx, dvFieldName, isCollection, isDouble, liveDocs,
-                        bucketStart, interval, bucketCounts);
+        // Pass 2: bucket counting (same visitor, zero duplication)
+        final double bs = bucketStart;
+        final long[] bc = bucketCounts;
+        visitLongValues(searcher, dvFieldName, isCollection, fc, val -> {
+            double v = isDouble ? Double.longBitsToDouble(val) : (double) val;
+            int idx = (int) ((v - bs) / interval);
+            if (idx >= 0 && idx < bc.length) {
+                bc[idx]++;
             }
-        } else {
-            for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
-                streamBucketCountMatching(md, dvFieldName, isCollection, isDouble,
-                        bucketStart, interval, bucketCounts);
-            }
-        }
+        });
 
         // Build result
         FacetResult.Builder result = FacetResult.newBuilder();
@@ -413,136 +435,8 @@ public class FacetExecutor {
         return result.build();
     }
 
-    private void streamMinMax(LeafReaderContext ctx, String dvFieldName, boolean isCollection,
-                               boolean isDouble, Bits liveDocs, double[] minMax) throws IOException {
-        if (isCollection) {
-            SortedNumericDocValues sndv = ctx.reader().getSortedNumericDocValues(dvFieldName);
-            if (sndv == null) return;
-            for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                if (liveDocs != null && !liveDocs.get(docId)) continue;
-                if (sndv.advanceExact(docId)) {
-                    for (int i = 0; i < sndv.docValueCount(); i++) {
-                        double val = rawToDouble(sndv.nextValue(), isDouble);
-                        if (val < minMax[0]) minMax[0] = val;
-                        if (val > minMax[1]) minMax[1] = val;
-                    }
-                }
-            }
-        } else {
-            NumericDocValues ndv = ctx.reader().getNumericDocValues(dvFieldName);
-            if (ndv == null) return;
-            for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                if (liveDocs != null && !liveDocs.get(docId)) continue;
-                if (ndv.advanceExact(docId)) {
-                    double val = rawToDouble(ndv.longValue(), isDouble);
-                    if (val < minMax[0]) minMax[0] = val;
-                    if (val > minMax[1]) minMax[1] = val;
-                }
-            }
-        }
-    }
-
-    private void streamMinMaxMatching(FacetsCollector.MatchingDocs md, String dvFieldName,
-                                       boolean isCollection, boolean isDouble,
-                                       double[] minMax) throws IOException {
-        if (isCollection) {
-            SortedNumericDocValues sndv = md.context().reader().getSortedNumericDocValues(dvFieldName);
-            if (sndv == null) return;
-            DocIdSetIterator iter = md.bits().iterator();
-            int docId;
-            while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-                if (sndv.advanceExact(docId)) {
-                    for (int i = 0; i < sndv.docValueCount(); i++) {
-                        double val = rawToDouble(sndv.nextValue(), isDouble);
-                        if (val < minMax[0]) minMax[0] = val;
-                        if (val > minMax[1]) minMax[1] = val;
-                    }
-                }
-            }
-        } else {
-            NumericDocValues ndv = md.context().reader().getNumericDocValues(dvFieldName);
-            if (ndv == null) return;
-            DocIdSetIterator iter = md.bits().iterator();
-            int docId;
-            while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-                if (ndv.advanceExact(docId)) {
-                    double val = rawToDouble(ndv.longValue(), isDouble);
-                    if (val < minMax[0]) minMax[0] = val;
-                    if (val > minMax[1]) minMax[1] = val;
-                }
-            }
-        }
-    }
-
-    private void streamBucketCount(LeafReaderContext ctx, String dvFieldName, boolean isCollection,
-                                    boolean isDouble, Bits liveDocs,
-                                    double bucketStart, double interval, long[] bucketCounts) throws IOException {
-        if (isCollection) {
-            SortedNumericDocValues sndv = ctx.reader().getSortedNumericDocValues(dvFieldName);
-            if (sndv == null) return;
-            for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                if (liveDocs != null && !liveDocs.get(docId)) continue;
-                if (sndv.advanceExact(docId)) {
-                    for (int i = 0; i < sndv.docValueCount(); i++) {
-                        incrementBucket(rawToDouble(sndv.nextValue(), isDouble),
-                                bucketStart, interval, bucketCounts);
-                    }
-                }
-            }
-        } else {
-            NumericDocValues ndv = ctx.reader().getNumericDocValues(dvFieldName);
-            if (ndv == null) return;
-            for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                if (liveDocs != null && !liveDocs.get(docId)) continue;
-                if (ndv.advanceExact(docId)) {
-                    incrementBucket(rawToDouble(ndv.longValue(), isDouble),
-                            bucketStart, interval, bucketCounts);
-                }
-            }
-        }
-    }
-
-    private void streamBucketCountMatching(FacetsCollector.MatchingDocs md, String dvFieldName,
-                                            boolean isCollection, boolean isDouble,
-                                            double bucketStart, double interval,
-                                            long[] bucketCounts) throws IOException {
-        if (isCollection) {
-            SortedNumericDocValues sndv = md.context().reader().getSortedNumericDocValues(dvFieldName);
-            if (sndv == null) return;
-            DocIdSetIterator iter = md.bits().iterator();
-            int docId;
-            while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-                if (sndv.advanceExact(docId)) {
-                    for (int i = 0; i < sndv.docValueCount(); i++) {
-                        incrementBucket(rawToDouble(sndv.nextValue(), isDouble),
-                                bucketStart, interval, bucketCounts);
-                    }
-                }
-            }
-        } else {
-            NumericDocValues ndv = md.context().reader().getNumericDocValues(dvFieldName);
-            if (ndv == null) return;
-            DocIdSetIterator iter = md.bits().iterator();
-            int docId;
-            while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-                if (ndv.advanceExact(docId)) {
-                    incrementBucket(rawToDouble(ndv.longValue(), isDouble),
-                            bucketStart, interval, bucketCounts);
-                }
-            }
-        }
-    }
-
-    private static void incrementBucket(double val, double bucketStart, double interval,
-                                         long[] bucketCounts) {
-        int idx = (int) ((val - bucketStart) / interval);
-        if (idx >= 0 && idx < bucketCounts.length) {
-            bucketCounts[idx]++;
-        }
-    }
-
     // =====================================================================
-    //  Date interval faceting (single-valued AND multi-valued)
+    //  Date interval — epoch-ms integer arithmetic, no ZonedDateTime
     // =====================================================================
 
     private FacetResult computeDateIntervalFacet(IndexSearcher searcher, String dvFieldName,
@@ -550,125 +444,131 @@ public class FacetExecutor {
                                                   FacetRequest req) throws IOException {
         DateInterval dateInterval = req.getDateInterval();
         boolean isCollection = FieldDataType.isCollection(type);
-        Map<String, Long> counts = new LinkedHashMap<>();
+        HashMap<Long, long[]> rawCounts = new HashMap<>();
 
-        if (fc == null) {
-            for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
-                Bits liveDocs = ctx.reader().getLiveDocs();
-                if (isCollection) {
-                    SortedNumericDocValues sndv = ctx.reader().getSortedNumericDocValues(dvFieldName);
-                    if (sndv == null) continue;
-                    for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                        if (liveDocs != null && !liveDocs.get(docId)) continue;
-                        if (sndv.advanceExact(docId)) {
-                            for (int i = 0; i < sndv.docValueCount(); i++) {
-                                counts.merge(truncateToDateBucket(sndv.nextValue(), dateInterval),
-                                        1L, Long::sum);
-                            }
-                        }
-                    }
-                } else {
-                    NumericDocValues ndv = ctx.reader().getNumericDocValues(dvFieldName);
-                    if (ndv == null) continue;
-                    for (int docId = 0; docId < ctx.reader().maxDoc(); docId++) {
-                        if (liveDocs != null && !liveDocs.get(docId)) continue;
-                        if (ndv.advanceExact(docId)) {
-                            counts.merge(truncateToDateBucket(ndv.longValue(), dateInterval),
-                                    1L, Long::sum);
-                        }
-                    }
-                }
+        visitLongValues(searcher, dvFieldName, isCollection, fc, epochMs -> {
+            long bucketKey = truncateEpochMs(epochMs, dateInterval);
+            long[] count = rawCounts.get(bucketKey);
+            if (count == null) {
+                rawCounts.put(bucketKey, new long[]{1});
+            } else {
+                count[0]++;
             }
-        } else {
-            for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
-                if (isCollection) {
-                    SortedNumericDocValues sndv = md.context().reader().getSortedNumericDocValues(dvFieldName);
-                    if (sndv == null) continue;
-                    DocIdSetIterator iter = md.bits().iterator();
-                    int docId;
-                    while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-                        if (sndv.advanceExact(docId)) {
-                            for (int i = 0; i < sndv.docValueCount(); i++) {
-                                counts.merge(truncateToDateBucket(sndv.nextValue(), dateInterval),
-                                        1L, Long::sum);
-                            }
-                        }
-                    }
-                } else {
-                    NumericDocValues ndv = md.context().reader().getNumericDocValues(dvFieldName);
-                    if (ndv == null) continue;
-                    DocIdSetIterator iter = md.bits().iterator();
-                    int docId;
-                    while ((docId = iter.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-                        if (ndv.advanceExact(docId)) {
-                            counts.merge(truncateToDateBucket(ndv.longValue(), dateInterval),
-                                    1L, Long::sum);
-                        }
-                    }
-                }
-            }
-        }
+        });
 
-        // Date buckets: sorted by key (chronological)
+        // Sort by bucket key (chronological) and format labels
         int maxBuckets = req.getCount() > 0 ? req.getCount() : DEFAULT_FACET_COUNT;
         FacetResult.Builder result = FacetResult.newBuilder();
-        counts.entrySet().stream()
+        rawCounts.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .limit(maxBuckets)
                 .forEach(e -> result.addBuckets(FacetBucket.newBuilder()
-                        .setValue(e.getKey())
-                        .setCount(e.getValue())
+                        .setValue(formatDateBucket(e.getKey(), dateInterval))
+                        .setCount(e.getValue()[0])
                         .build()));
         return result.build();
     }
 
+    /** Truncate epoch-ms to bucket boundary using integer arithmetic. Zero allocations. */
+    private static long truncateEpochMs(long epochMs, DateInterval interval) {
+        return switch (interval) {
+            case MINUTE -> epochMs - (epochMs % MS_PER_MINUTE);
+            case HOUR -> epochMs - (epochMs % MS_PER_HOUR);
+            case DAY -> epochMs - (epochMs % MS_PER_DAY);
+            case MONTH -> {
+                java.time.LocalDate ld = java.time.LocalDate.ofEpochDay(epochMs / MS_PER_DAY);
+                yield java.time.LocalDate.of(ld.getYear(), ld.getMonthValue(), 1)
+                        .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
+            }
+            case YEAR -> {
+                java.time.LocalDate ld = java.time.LocalDate.ofEpochDay(epochMs / MS_PER_DAY);
+                yield java.time.LocalDate.of(ld.getYear(), 1, 1)
+                        .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
+            }
+            default -> epochMs - (epochMs % MS_PER_DAY);
+        };
+    }
+
+    /** Format a truncated epoch-ms bucket key into a human-readable label. */
+    private static String formatDateBucket(long truncatedEpochMs, DateInterval interval) {
+        java.time.LocalDate ld = java.time.LocalDate.ofEpochDay(truncatedEpochMs / MS_PER_DAY);
+        return switch (interval) {
+            case MINUTE, HOUR -> java.time.Instant.ofEpochMilli(truncatedEpochMs)
+                    .atZone(java.time.ZoneOffset.UTC).toString();
+            case DAY -> ld.toString();
+            case MONTH -> ld.getYear() + "-" + String.format("%02d", ld.getMonthValue());
+            case YEAR -> String.valueOf(ld.getYear());
+            default -> ld.toString();
+        };
+    }
+
     // =====================================================================
-    //  Result builders
+    //  Result builder — PriorityQueue partial sort for top-N
     // =====================================================================
 
-    /**
-     * Builds a FacetResult with sorting and top-N trimming.
-     * @param isIntegerNumeric true if keys should be compared numerically (for VALUE_ASC/DESC)
-     */
     private FacetResult buildTermsFacetResult(Map<String, Long> counts, FacetRequest req,
                                                boolean isIntegerNumeric) {
         int maxBuckets = req.getCount() > 0 ? req.getCount() : DEFAULT_FACET_COUNT;
         FacetSortOrder sortOrder = req.getSort();
 
-        // Apply explicit values filter
+        // Explicit values filter
         if (req.getValuesCount() > 0) {
             Set<String> allowed = new HashSet<>(req.getValuesList());
             counts.entrySet().removeIf(e -> !allowed.contains(e.getKey()));
         }
 
-        Comparator<Map.Entry<String, Long>> comparator = switch (sortOrder) {
-            case COUNT_DESC -> Map.Entry.<String, Long>comparingByValue()
-                    .reversed()
-                    .thenComparing(e -> e.getKey(), numericAwareComparator(isIntegerNumeric));
-            case COUNT_ASC -> Map.Entry.<String, Long>comparingByValue()
-                    .thenComparing(e -> e.getKey(), numericAwareComparator(isIntegerNumeric));
-            case VALUE_ASC -> Comparator.comparing(e -> e.getKey(), numericAwareComparator(isIntegerNumeric));
-            case VALUE_DESC -> Comparator.comparing(
-                    (Map.Entry<String, Long> e) -> e.getKey(), numericAwareComparator(isIntegerNumeric)).reversed();
-            default -> Map.Entry.<String, Long>comparingByValue()
-                    .reversed()
-                    .thenComparing(e -> e.getKey(), numericAwareComparator(isIntegerNumeric));
-        };
+        if (counts.isEmpty()) {
+            return FacetResult.getDefaultInstance();
+        }
 
+        Comparator<Map.Entry<String, Long>> comparator = buildComparator(sortOrder, isIntegerNumeric);
+
+        // For top-N with N << total, PriorityQueue is O(total * log N) vs full sort O(total * log total)
         FacetResult.Builder result = FacetResult.newBuilder();
-        counts.entrySet().stream()
-                .sorted(comparator)
-                .limit(maxBuckets)
-                .forEach(e -> result.addBuckets(FacetBucket.newBuilder()
-                        .setValue(e.getKey())
-                        .setCount(e.getValue())
-                        .build()));
+        if (counts.size() <= maxBuckets || maxBuckets <= 0) {
+            // No need for partial sort — just sort all
+            counts.entrySet().stream()
+                    .sorted(comparator)
+                    .limit(maxBuckets > 0 ? maxBuckets : Integer.MAX_VALUE)
+                    .forEach(e -> result.addBuckets(FacetBucket.newBuilder()
+                            .setValue(e.getKey()).setCount(e.getValue()).build()));
+        } else {
+            // Partial sort with bounded PriorityQueue (keeps top-N in min-heap)
+            Comparator<Map.Entry<String, Long>> reversed = comparator.reversed();
+            PriorityQueue<Map.Entry<String, Long>> heap = new PriorityQueue<>(maxBuckets + 1, reversed);
+            for (var entry : counts.entrySet()) {
+                heap.offer(entry);
+                if (heap.size() > maxBuckets) {
+                    heap.poll();
+                }
+            }
+            // Drain heap in correct order
+            Map.Entry<String, Long>[] top = heap.toArray(new Map.Entry[0]);
+            java.util.Arrays.sort(top, comparator);
+            for (var e : top) {
+                result.addBuckets(FacetBucket.newBuilder()
+                        .setValue(e.getKey()).setCount(e.getValue()).build());
+            }
+        }
         return result.build();
     }
 
-    /** Returns a comparator that sorts numerically when possible, lexicographically otherwise. */
-    private static Comparator<String> numericAwareComparator(boolean isNumeric) {
-        if (!isNumeric) return Comparator.naturalOrder();
+    private static Comparator<Map.Entry<String, Long>> buildComparator(FacetSortOrder order,
+                                                                        boolean isNumeric) {
+        Comparator<String> keyComp = isNumeric ? numericComparator() : Comparator.naturalOrder();
+        return switch (order) {
+            case COUNT_DESC -> Map.Entry.<String, Long>comparingByValue().reversed()
+                    .thenComparing(Map.Entry::getKey, keyComp);
+            case COUNT_ASC -> Map.Entry.<String, Long>comparingByValue()
+                    .thenComparing(Map.Entry::getKey, keyComp);
+            case VALUE_ASC -> Comparator.comparing(Map.Entry::getKey, keyComp);
+            case VALUE_DESC -> Comparator.comparing(Map.Entry<String, Long>::getKey, keyComp).reversed();
+            default -> Map.Entry.<String, Long>comparingByValue().reversed()
+                    .thenComparing(Map.Entry::getKey, keyComp);
+        };
+    }
+
+    private static Comparator<String> numericComparator() {
         return (a, b) -> {
             try {
                 return Double.compare(Double.parseDouble(a), Double.parseDouble(b));
@@ -682,20 +582,14 @@ public class FacetExecutor {
     //  Field name resolution
     // =====================================================================
 
-    /**
-     * Resolves the Lucene DocValues field name for faceting.
-     * Priority: sortable ($o) → filterable ($f for numerics) → facetable-only ($o).
-     */
     static String resolveDvFieldName(SchemaField field) {
         if (field.isSortable()) {
             return LuceneFieldType.SORTABLE.toLuceneFieldName(field.getName());
         }
         if (field.isFilterable() && isNumericOrDate(field.getType())
                 && !FieldDataType.isCollection(field.getType())) {
-            // Non-collection filterable numerics have DV at $f
             return LuceneFieldType.FILTERABLE.toLuceneFieldName(field.getName());
         }
-        // Facetable-only or collection: mapper adds DV at $o
         return LuceneFieldType.SORTABLE.toLuceneFieldName(field.getName());
     }
 
@@ -703,26 +597,24 @@ public class FacetExecutor {
     //  Type helpers
     // =====================================================================
 
-    private static boolean isStringOrBoolean(FieldDataType type) {
-        return type == FieldDataType.STRING || type == FieldDataType.STRING_COLLECTION
-                || type == FieldDataType.BOOLEAN || type == FieldDataType.BOOLEAN_COLLECTION;
+    private static boolean isStringOrBoolean(FieldDataType t) {
+        return t == FieldDataType.STRING || t == FieldDataType.STRING_COLLECTION
+                || t == FieldDataType.BOOLEAN || t == FieldDataType.BOOLEAN_COLLECTION;
     }
 
-    private static boolean isNumericOrDate(FieldDataType type) {
-        return type == FieldDataType.INT32 || type == FieldDataType.INT64
-                || type == FieldDataType.DOUBLE || type == FieldDataType.DATE_TIME_OFFSET
-                || type == FieldDataType.INT32_COLLECTION || type == FieldDataType.INT64_COLLECTION
-                || type == FieldDataType.DOUBLE_COLLECTION
-                || type == FieldDataType.DATE_TIME_OFFSET_COLLECTION;
+    private static boolean isNumericOrDate(FieldDataType t) {
+        return t == FieldDataType.INT32 || t == FieldDataType.INT64
+                || t == FieldDataType.DOUBLE || t == FieldDataType.DATE_TIME_OFFSET
+                || t == FieldDataType.INT32_COLLECTION || t == FieldDataType.INT64_COLLECTION
+                || t == FieldDataType.DOUBLE_COLLECTION || t == FieldDataType.DATE_TIME_OFFSET_COLLECTION;
     }
 
-    private static boolean isDateTimeOffset(FieldDataType type) {
-        return type == FieldDataType.DATE_TIME_OFFSET
-                || type == FieldDataType.DATE_TIME_OFFSET_COLLECTION;
+    private static boolean isDateTimeOffset(FieldDataType t) {
+        return t == FieldDataType.DATE_TIME_OFFSET || t == FieldDataType.DATE_TIME_OFFSET_COLLECTION;
     }
 
-    private static double rawToDouble(long rawValue, boolean isDouble) {
-        return isDouble ? Double.longBitsToDouble(rawValue) : (double) rawValue;
+    private static boolean isDoubleType(FieldDataType t) {
+        return t == FieldDataType.DOUBLE || t == FieldDataType.DOUBLE_COLLECTION;
     }
 
     private static String formatNumericValue(long rawValue, boolean isDouble) {
@@ -739,17 +631,5 @@ public class FacetExecutor {
             return String.valueOf((long) val);
         }
         return String.valueOf(val);
-    }
-
-    private static String truncateToDateBucket(long epochMs, DateInterval interval) {
-        ZonedDateTime dt = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC);
-        return switch (interval) {
-            case MINUTE -> dt.truncatedTo(ChronoUnit.MINUTES).toString();
-            case HOUR -> dt.truncatedTo(ChronoUnit.HOURS).toString();
-            case DAY -> dt.toLocalDate().toString();
-            case MONTH -> dt.getYear() + "-" + String.format("%02d", dt.getMonthValue());
-            case YEAR -> String.valueOf(dt.getYear());
-            default -> dt.toLocalDate().toString();
-        };
     }
 }

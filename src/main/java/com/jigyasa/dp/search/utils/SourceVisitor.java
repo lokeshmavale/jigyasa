@@ -7,8 +7,14 @@ import org.apache.lucene.index.StoredFieldVisitor;
 public class SourceVisitor extends StoredFieldVisitor {
     private byte[] src;
 
+    /** Returns the raw source bytes WITHOUT cloning. Caller must not mutate. */
     public byte[] getSrc() {
-        return src != null ? src.clone() : null;
+        return src;
+    }
+
+    /** Reset for reuse across hits in the same query. */
+    public void reset() {
+        this.src = null;
     }
 
     @Override

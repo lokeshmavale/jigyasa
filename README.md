@@ -36,6 +36,7 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 | Count (p50) | **1.84ms** | 8.63ms | **4.7x** |
 | Text + filter (p50) | **2.72ms** | 12.71ms | **4.7x** |
 | Avg query p50 | **3.61ms** | 14.29ms | **4.0x** |
+| Avg facets p50 | **21.77ms** | 39.48ms | **1.8x** |
 | Concurrent throughput | **1,467 qps** | 351 qps | **4.2x** |
 | Bulk indexing | **17K docs/s** | 14K docs/s | **1.2x** |
 | Cold start | **~2s** | ~16s | **8x** |

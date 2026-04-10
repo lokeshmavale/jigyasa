@@ -26,7 +26,7 @@ class FileAppenderTest {
 
     @AfterEach
     void tearDown() {
-        appender.closeOpenFiles();
+        appender.shutdown();
     }
 
     @BeforeEach
@@ -70,7 +70,7 @@ class FileAppenderTest {
     void truncatedLastEntry() throws Exception {
         appender.append(buildRequest("doc1", "valid entry"));
         // Close the appender to release file handles before corruption
-        appender.closeOpenFiles();
+        appender.shutdown();
 
         Path[] files = Files.list(tempDir)
                 .filter(p -> p.getFileName().toString().startsWith("translog.dat"))
@@ -88,7 +88,7 @@ class FileAppenderTest {
             assertThat(recovered).hasSize(1);
             assertThat(recovered.get(0).getItem(0).getDocument()).isEqualTo("valid entry");
         } finally {
-            recoveryAppender.closeOpenFiles();
+            recoveryAppender.shutdown();
         }
     }
 
@@ -96,7 +96,7 @@ class FileAppenderTest {
     @DisplayName("Invalid length (negative) stops reading gracefully")
     void invalidLengthStopsRead() throws Exception {
         appender.append(buildRequest("doc1", "valid"));
-        appender.closeOpenFiles();
+        appender.shutdown();
 
         Path[] files = Files.list(tempDir)
                 .filter(p -> p.getFileName().toString().startsWith("translog.dat"))
@@ -111,7 +111,7 @@ class FileAppenderTest {
             List<IndexRequest> recovered = recoveryAppender.getData();
             assertThat(recovered).hasSize(1);
         } finally {
-            recoveryAppender.closeOpenFiles();
+            recoveryAppender.shutdown();
         }
     }
 
@@ -130,7 +130,7 @@ class FileAppenderTest {
     @DisplayName("Checkpoint persists file number across restarts")
     void checkpointPersistsFileNumber() throws Exception {
         appender.append(buildRequest("doc1", "data"));
-        appender.closeOpenFiles();
+        appender.shutdown();
 
         // Create new appender from same dir — should resume from checkpoint
         FileAppender recovered = new FileAppender(tempDir.toString());
@@ -140,7 +140,7 @@ class FileAppenderTest {
             // Both entries should be recoverable
             assertThat(data).hasSizeGreaterThanOrEqualTo(1);
         } finally {
-            recovered.closeOpenFiles();
+            recovered.shutdown();
         }
     }
 
@@ -148,7 +148,7 @@ class FileAppenderTest {
     @DisplayName("Corrupt protobuf entry is skipped without crash")
     void corruptProtobufEntrySkipped() throws Exception {
         appender.append(buildRequest("doc1", "valid"));
-        appender.closeOpenFiles();
+        appender.shutdown();
 
         // Find the translog file and append garbage with a valid length header
         Path[] files = Files.list(tempDir)
@@ -169,7 +169,7 @@ class FileAppenderTest {
             assertThat(data).hasSize(1);
             assertThat(data.get(0).getItem(0).getDocument()).isEqualTo("valid");
         } finally {
-            recovered.closeOpenFiles();
+            recovered.shutdown();
         }
     }
 
@@ -180,7 +180,7 @@ class FileAppenderTest {
         appender.append(buildRequest("doc1", "first"));
         appender.append(buildRequest("doc2", "second"));
         appender.append(buildRequest("doc3", "third"));
-        appender.closeOpenFiles();
+        appender.shutdown();
 
         // Find the translog file and corrupt the SECOND entry's payload on disk
         Path[] files = Files.list(tempDir)
@@ -212,7 +212,7 @@ class FileAppenderTest {
             assertThat(data.get(0).getItem(0).getDocument()).isEqualTo("first");
             assertThat(data.get(1).getItem(0).getDocument()).isEqualTo("third");
         } finally {
-            recovered.closeOpenFiles();
+            recovered.shutdown();
         }
     }
 
@@ -222,12 +222,12 @@ class FileAppenderTest {
         // Write some entries, close
         appender.append(buildRequest("doc1", "data1"));
         appender.append(buildRequest("doc2", "data2"));
-        appender.closeOpenFiles();
+        appender.shutdown();
 
         // Restart 1: should pick up from checkpoint
         FileAppender restart1 = new FileAppender(tempDir.toString());
         restart1.append(buildRequest("doc3", "data3"));
-        restart1.closeOpenFiles();
+        restart1.shutdown();
 
         // Restart 2: should pick up from restart1's checkpoint
         FileAppender restart2 = new FileAppender(tempDir.toString());
@@ -237,7 +237,7 @@ class FileAppenderTest {
             // Should see entries from original, restart1, and restart2
             assertThat(data).hasSizeGreaterThanOrEqualTo(3);
         } finally {
-            restart2.closeOpenFiles();
+            restart2.shutdown();
         }
     }
 

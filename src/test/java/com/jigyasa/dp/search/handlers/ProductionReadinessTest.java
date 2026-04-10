@@ -593,7 +593,7 @@ class ProductionReadinessTest {
                                 .build())
                         .build();
                 appender.append(validReq);
-                appender.closeOpenFiles();
+                appender.shutdown();
 
                 // Find the translog data file and append garbage bytes with valid length header
                 Path[] files = Files.list(tempDir)
@@ -619,10 +619,10 @@ class ProductionReadinessTest {
                     assertThat(recovered).hasSize(1);
                     assertThat(recovered.get(0).getItem(0).getDocument()).isEqualTo("valid document");
                 } finally {
-                    recoveryAppender.closeOpenFiles();
+                    recoveryAppender.shutdown();
                 }
             } finally {
-                appender.closeOpenFiles();
+                appender.shutdown();
             }
         }
     }
@@ -652,7 +652,7 @@ class ProductionReadinessTest {
     class SourceVisitorDefensiveCopyTests {
 
         @Test
-        @DisplayName("getSrc() returns a clone — modifying returned array does not affect internal state")
+        @DisplayName("getSrc() returns raw reference — caller must not mutate (perf optimization)")
         void getSrcReturnsDefensiveCopy() throws Exception {
             SourceVisitor visitor = new SourceVisitor();
 
@@ -673,15 +673,14 @@ class ProductionReadinessTest {
             );
             visitor.binaryField(fieldInfo, original);
 
-            // Get first copy and mutate it
-            byte[] firstCopy = visitor.getSrc();
-            assertThat(firstCopy).isEqualTo(new byte[]{1, 2, 3, 4, 5});
-            firstCopy[0] = 99;
+            // Returns raw reference (no clone — zero-copy for performance)
+            byte[] ref = visitor.getSrc();
+            assertThat(ref).isEqualTo(new byte[]{1, 2, 3, 4, 5});
+            assertThat(ref).isSameAs(original);
 
-            // Second call should be unaffected by mutation
-            byte[] secondCopy = visitor.getSrc();
-            assertThat(secondCopy).isEqualTo(new byte[]{1, 2, 3, 4, 5});
-            assertThat(secondCopy).isNotSameAs(firstCopy);
+            // reset() clears for reuse across hits
+            visitor.reset();
+            assertThat(visitor.getSrc()).isNull();
         }
 
         @Test

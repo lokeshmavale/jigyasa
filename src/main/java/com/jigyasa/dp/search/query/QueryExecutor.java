@@ -80,8 +80,8 @@ public class QueryExecutor {
      * Preserves Sort and SearchAfter behavior via Lucene's built-in support.
      *
      * IMPORTANT: Facet counts always reflect ALL matching docs (not just the page).
-     * When searchAfter is used, we run a separate non-paged search for facets so that
-     * the FacetsCollector sees the full result set.
+     * When searchAfter is used, we collect facets via FacetsCollectorManager (no scoring
+     * overhead) and run a separate paged search for TopDocs.
      */
     public FacetsCollectorManager.FacetsResult executeWithFacets(
             IndexSearcher searcher, Query query, int numHits,
@@ -89,20 +89,16 @@ public class QueryExecutor {
         FacetsCollectorManager fcManager = new FacetsCollectorManager();
 
         if (searchAfter != null && hasValidToken(searchAfter)) {
-            // searchAfter paging: facets must still reflect ALL matches.
-            // Run a full (non-paged) facet collection, then a paged TopDocs search.
-            FacetsCollectorManager.FacetsResult fullResult =
-                    (sort != null)
-                            ? FacetsCollectorManager.search(searcher, query, numHits, sort, fcManager)
-                            : FacetsCollectorManager.search(searcher, query, numHits, fcManager);
+            // searchAfter: run a lightweight facet-only collection (no TopDocs scoring),
+            // then a paged search for the actual result page.
+            FacetsCollector fc = searcher.search(query, fcManager);
 
-            // Now run the paged search for correct TopDocs
             ScoreDoc after = reconstructScoreDoc(searchAfter, sort);
             TopDocs pagedTopDocs = (sort != null)
                     ? searcher.searchAfter(after, query, numHits, sort)
                     : searcher.searchAfter(after, query, numHits);
 
-            return new FacetsCollectorManager.FacetsResult(pagedTopDocs, fullResult.facetsCollector());
+            return new FacetsCollectorManager.FacetsResult(pagedTopDocs, fc);
         }
 
         return (sort != null)

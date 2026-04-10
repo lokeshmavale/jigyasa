@@ -65,48 +65,50 @@ public class QueryResponseBuilder {
 
         boolean hasProjection = sourceFields != null && !sourceFields.isEmpty();
         Set<String> projectedFields = hasProjection ? Set.copyOf(sourceFields) : null;
+        boolean needsFullParse = includeSource || hasProjection;
 
         String keyFieldName = schema.getKeyFieldName();
         int end = (int) Math.min((long) offset + topK, topDocs.scoreDocs.length);
-        int filteredCount = 0;
+
+        // Acquire StoredFields once — avoid per-hit accessor creation
+        var storedFields = searcher.storedFields();
+        SourceVisitor visitor = new SourceVisitor();
 
         for (int i = offset; i < end; i++) {
             ScoreDoc scoreDoc = topDocs.scoreDocs[i];
 
-            // Skip hits below min_score threshold
             if (minScore > 0.0f && scoreDoc.score < minScore) {
-                filteredCount++;
                 continue;
             }
 
             QueryHit.Builder hit = QueryHit.newBuilder();
             hit.setScore(scoreDoc.score);
 
-            SourceVisitor visitor = new SourceVisitor();
-            searcher.storedFields().document(scoreDoc.doc, visitor);
+            visitor.reset();
+            storedFields.document(scoreDoc.doc, visitor);
 
-            if (visitor.getSrc() != null) {
-                String srcJson = new String(visitor.getSrc(), StandardCharsets.UTF_8);
-                JsonNode parsedSource = null;
+            byte[] srcBytes = visitor.getSrc();
+            if (srcBytes != null) {
+                if (needsFullParse) {
+                    // Full parse needed for source/projection — also extract key
+                    String srcJson = new String(srcBytes, StandardCharsets.UTF_8);
+                    try {
+                        JsonNode parsedSource = OBJECT_MAPPER.readTree(srcJson);
+                        JsonNode keyNode = parsedSource.get(keyFieldName);
+                        hit.setDocId(keyNode != null ? keyNode.asText() : "");
 
-                // Parse JSON once, reuse for key extraction and projection
-                try {
-                    parsedSource = OBJECT_MAPPER.readTree(srcJson);
-                } catch (Exception e) {
-                    log.warn("Failed to parse source JSON", e);
-                }
-
-                if (parsedSource != null) {
-                    JsonNode keyNode = parsedSource.get(keyFieldName);
-                    hit.setDocId(keyNode != null ? keyNode.asText() : "");
+                        if (hasProjection) {
+                            hit.setSource(projectFromParsed(parsedSource, projectedFields));
+                        } else {
+                            hit.setSource(srcJson);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to parse source JSON", e);
+                        hit.setDocId("");
+                    }
                 } else {
-                    hit.setDocId("");
-                }
-
-                if (hasProjection && parsedSource != null) {
-                    hit.setSource(projectFromParsed(parsedSource, projectedFields));
-                } else if (includeSource) {
-                    hit.setSource(srcJson);
+                    // Fast path: extract only the key field without full JSON tree parse
+                    hit.setDocId(extractKeyFromBytes(srcBytes, keyFieldName));
                 }
             }
 
@@ -139,6 +141,40 @@ public class QueryResponseBuilder {
         }
 
         return response.build();
+    }
+
+    /**
+     * Extracts a single key field value from raw JSON bytes using Jackson's streaming parser.
+     * Avoids building a full JsonNode tree — O(key_position) scan, zero tree allocation.
+     */
+    private static String extractKeyFromBytes(byte[] srcBytes, String keyFieldName) {
+        try {
+            com.fasterxml.jackson.core.JsonParser parser = OBJECT_MAPPER.getFactory()
+                    .createParser(srcBytes);
+            if (parser.nextToken() != com.fasterxml.jackson.core.JsonToken.START_OBJECT) {
+                parser.close();
+                return "";
+            }
+            while (parser.nextToken() != com.fasterxml.jackson.core.JsonToken.END_OBJECT) {
+                String name = parser.currentName();
+                parser.nextToken(); // move to value
+                if (keyFieldName.equals(name)) {
+                    String value = parser.getValueAsString("");
+                    parser.close();
+                    return value;
+                }
+                parser.skipChildren(); // skip nested objects/arrays
+            }
+            parser.close();
+        } catch (Exception e) {
+            // Fallback: full parse
+            try {
+                JsonNode node = OBJECT_MAPPER.readTree(srcBytes);
+                JsonNode keyNode = node.get(keyFieldName);
+                return keyNode != null ? keyNode.asText() : "";
+            } catch (Exception ignored) {}
+        }
+        return "";
     }
 
     private String projectFromParsed(JsonNode root, Set<String> fields) {
