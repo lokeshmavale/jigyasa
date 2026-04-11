@@ -31,8 +31,9 @@ On startup, `Main.java` runs `BootstrapChecks` before initializing the server:
 The gRPC server uses a split I/O + handler architecture:
 
 - **NIO Event Loop** (2 threads) — handles TCP accept/read/write only
-- **Handler Executor** (fixed thread pool, CPU count) — executes Lucene search/index operations
-- This separation prevents CPU-bound Lucene operations from blocking I/O threads
+- **Handler Executor** (fixed thread pool, CPU count, bounded queue=1000) — executes Lucene operations. CallerRunsPolicy for backpressure.
+- **Search Executor** (cpus × 1.5 + 1 threads) — passed to `IndexSearcher` for concurrent segment search
+- **Memory Circuit Breaker** — rejects user requests at 95% heap; background tasks unaffected
 
 ## Component Overview
 

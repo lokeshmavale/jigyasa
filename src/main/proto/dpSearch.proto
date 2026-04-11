@@ -318,6 +318,8 @@ message HealthResponse {
   }
   Status status = 1;
   repeated CollectionHealth collections = 2;
+  bool circuit_breaker_tripped = 3;     // True if memory circuit breaker is currently tripped
+  int64 circuit_breaker_trip_count = 4; // Total number of times the breaker has tripped
 }
 
 message CollectionHealth {

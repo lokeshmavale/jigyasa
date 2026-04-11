@@ -20,6 +20,8 @@ All configuration via environment variables:
 | `DOCID_OVERLAP_TIMEOUT_MS` | `30000` | Timeout for concurrent updates to same document key |
 | `MAX_VECTOR_DIMENSION` | `2048` | Maximum allowed vector dimension |
 | `BOOTSTRAP_MEMORY_LOCK` | (not set) | Set to `true` to enable native memory locking (mlockall/VirtualLock). Requires `ulimit -l unlimited` on Linux. |
+| `CIRCUIT_BREAKER_HEAP_THRESHOLD` | `0.95` | Heap usage fraction at which user requests are rejected (0.0–1.0). Background tasks unaffected. |
+| `CIRCUIT_BREAKER_ENABLED` | `true` | Set to `false` to disable the memory circuit breaker. |
 
 ## Data Storage
 
@@ -302,6 +304,33 @@ All benchmarks run on **Linux containers** with equal resources: **4 CPUs, 12GB 
 | **Average** | **16.21ms** | **39.48ms** | **2.4x** | **32.01ms** | **71.65ms** |
 
 > Reproduce: `python benchmarks/benchmark_facets.py`
+
+## Production Hardening
+
+### Memory Circuit Breaker
+
+Jigyasa includes an ES-style memory circuit breaker that rejects user-facing requests when JVM heap usage exceeds a configurable threshold (default: 95%). Background tasks (commits, TTL sweeps, translog flushes) are never affected.
+
+**Behavior:**
+1. Checks real heap via `MemoryMXBean.getHeapMemoryUsage()` on every request (~50ns)
+2. If above threshold, nudges GC once (30s cooldown) and re-checks
+3. If still above, returns gRPC `RESOURCE_EXHAUSTED` until memory recovers
+4. Auto-recovers when heap drops below threshold
+5. Health API reports `circuit_breaker_tripped` and `circuit_breaker_trip_count`
+
+**Configuration:**
+```bash
+export CIRCUIT_BREAKER_HEAP_THRESHOLD=0.95  # default: 95%
+export CIRCUIT_BREAKER_ENABLED=true         # set "false" to disable
+```
+
+### Bounded Request Queue
+
+The gRPC handler thread pool uses a bounded queue (capacity: 1000) to prevent OOM under burst load. When full, `CallerRunsPolicy` executes on the gRPC I/O thread, applying natural TCP-level backpressure without dropping requests.
+
+### Concurrent Segment Search
+
+`IndexSearcher` is created with an `Executor` (ES-style thread sizing: `cpus × 1.5 + 1`). Lucene 10.4 automatically parallelizes query execution, scoring, and `CollectorManager` operations across segments.
 
 ## Performance Tuning
 

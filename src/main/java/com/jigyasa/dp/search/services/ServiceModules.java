@@ -26,10 +26,15 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class ServiceModules extends AbstractModule {
+
+    // Max queued requests before rejecting. ES uses 1000 for search.
+    // At ~5ms per request, 1000 queued = ~5s max wait time.
+    private static final int HANDLER_QUEUE_CAPACITY = 1000;
 
     @Provides
     @Singleton
@@ -42,11 +47,15 @@ public class ServiceModules extends AbstractModule {
         NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup(2,
                 new DefaultThreadFactory("jigyasa-io", true));
 
-        // Dedicated fixed thread pool for handler execution — sized to CPU count.
-        // Handlers perform CPU-bound Lucene operations (1-5ms), so we isolate them
-        // from I/O threads to prevent head-of-line blocking at higher concurrency.
-        ExecutorService handlerExecutor = Executors.newFixedThreadPool(cpus,
-                new DefaultThreadFactory("jigyasa-handler", true));
+        // Dedicated handler thread pool — bounded queue (ES-style) prevents OOM under burst.
+        // Queue capacity 1000: at ~5ms/request, this is ~5s of buffered work.
+        // When full, ThreadPoolExecutor.CallerRunsPolicy executes on the gRPC I/O thread,
+        // applying natural backpressure without dropping requests.
+        ExecutorService handlerExecutor = new ThreadPoolExecutor(
+                cpus, cpus, 0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(HANDLER_QUEUE_CAPACITY),
+                new DefaultThreadFactory("jigyasa-handler", true),
+                new ThreadPoolExecutor.CallerRunsPolicy());
 
         return NettyServerBuilder.forPort(Integer.parseInt(port))
                 .executor(handlerExecutor)

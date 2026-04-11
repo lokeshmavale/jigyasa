@@ -16,6 +16,8 @@ import com.jigyasa.dp.search.protocol.ListCollectionsRequest;
 import com.jigyasa.dp.search.protocol.ListCollectionsResponse;
 import com.jigyasa.dp.search.protocol.OpenCollectionRequest;
 import com.jigyasa.dp.search.protocol.OpenCollectionResponse;
+import com.jigyasa.dp.search.services.MemoryCircuitBreaker;
+import com.jigyasa.dp.search.services.RequestHandlerBase;
 import com.jigyasa.dp.search.utils.SchemaUtil;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -109,9 +111,12 @@ public class IndexManager {
 
     public void health(HealthRequest req, StreamObserver<HealthResponse> observer) {
         try {
+            MemoryCircuitBreaker breaker = RequestHandlerBase.getCircuitBreaker();
             HealthResponse.Builder response = HealthResponse.newBuilder()
                     .setStatus(HealthResponse.Status.SERVING)
-                    .addAllCollections(registry.getHealthForAll());
+                    .addAllCollections(registry.getHealthForAll())
+                    .setCircuitBreakerTripped(breaker.isEnabled() && breaker.isTripped())
+                    .setCircuitBreakerTripCount(breaker.getTripCount());
             observer.onNext(response.build());
             observer.onCompleted();
         } catch (Exception e) {
