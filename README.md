@@ -47,15 +47,15 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 
 ## Quick Start
 
-**Download** the latest release from [GitHub Releases](https://github.com/lokeshmavale/engram/releases) — no build required:
+**Download** the latest release from [GitHub Releases](https://github.com/lokeshmavale/jigyasa/releases) — no build required:
 
 ```bash
 # Option 1: Download fat JAR and run
-curl -LO https://github.com/lokeshmavale/engram/releases/latest/download/Jigyasa-all.jar
+curl -LO https://github.com/lokeshmavale/jigyasa/releases/latest/download/Jigyasa-all.jar
 java --add-modules jdk.incubator.vector -Xms1g -Xmx1g -jar Jigyasa-all.jar
 
 # Option 2: Docker
-docker run -p 50051:50051 ghcr.io/lokeshmavale/engram:latest
+docker run -p 50051:50051 ghcr.io/lokeshmavale/jigyasa:latest
 
 # Option 3: Gradle dependency (GitHub Packages)
 # build.gradle: implementation 'com.jigyasa.search:jigyasa:1.0.0'
