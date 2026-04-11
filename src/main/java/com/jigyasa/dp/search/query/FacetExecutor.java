@@ -34,20 +34,22 @@ import java.util.Set;
  * Computes facets by iterating DocValues directly — no Lucene FacetsConfig needed.
  * Reuses existing $o/$f DocValues fields.
  *
+ * Parallelism is handled by Lucene's IndexSearcher executor + CollectorManager,
+ * not by a custom thread pool. When IndexSearcher has an Executor, Lucene slices
+ * segments and runs FacetsCollectorManager across threads automatically.
+ *
  * Optimizations:
  *   - Ordinal-based counting for all string/boolean DV (int[] per segment, resolve at end)
- *   - Primitive long→long counting for numeric terms (no HashMap boxing for low cardinality)
- *   - Single-pass range faceting (min/max + bucket count in one scan)
+ *   - Primitive long→long counting for numeric terms (no HashMap boxing)
  *   - Epoch-ms integer arithmetic for date bucketing (no ZonedDateTime allocations)
  *   - PriorityQueue partial sort for top-N (avoids full sort)
- *   - Unified DV visitor pattern eliminates MatchAll/Filtered × single/collection duplication
+ *   - Unified DV visitor pattern eliminates code duplication
  */
 public class FacetExecutor {
     private static final Logger log = LoggerFactory.getLogger(FacetExecutor.class);
     private static final int DEFAULT_FACET_COUNT = 10;
     private static final int MAX_RANGE_BUCKETS = 10_000;
 
-    // Date arithmetic constants (ms)
     private static final long MS_PER_MINUTE = 60_000L;
     private static final long MS_PER_HOUR = 3_600_000L;
     private static final long MS_PER_DAY = 86_400_000L;
@@ -186,20 +188,19 @@ public class FacetExecutor {
     private FacetResult computeStringTermsFacet(IndexSearcher searcher, String dvFieldName,
                                                  FieldDataType type, FacetsCollector fc,
                                                  FacetRequest req) throws IOException {
-        Map<String, Long> counts = new HashMap<>();
         boolean isCollection = FieldDataType.isCollection(type);
-
+        // String ordinal counting is maximally cache-friendly sequential — parallelism
+        // adds dispatch + merge overhead that exceeds gain at typical segment counts.
+        Map<String, Long> counts = new HashMap<>();
         if (fc == null) {
             for (LeafReaderContext ctx : searcher.getIndexReader().leaves()) {
-                Bits liveDocs = ctx.reader().getLiveDocs();
-                countStringSegment(ctx, dvFieldName, isCollection, liveDocs, null, counts);
+                countStringSegment(ctx, dvFieldName, isCollection, ctx.reader().getLiveDocs(), null, counts);
             }
         } else {
             for (FacetsCollector.MatchingDocs md : fc.getMatchingDocs()) {
                 countStringSegment(md.context(), dvFieldName, isCollection, null, md, counts);
             }
         }
-
         return buildTermsFacetResult(counts, req, false);
     }
 
@@ -346,20 +347,19 @@ public class FacetExecutor {
         HashMap<Long, long[]> rawCounts = new HashMap<>();
 
         visitLongValues(searcher, dvFieldName, isCollection, fc, val -> {
-            long[] count = rawCounts.get(val);
-            if (count == null) {
-                rawCounts.put(val, new long[]{1});
-            } else {
-                count[0]++;
-            }
+            incrementLongMap(rawCounts, val);
         });
 
-        // Convert to string map at end
         Map<String, Long> counts = new HashMap<>(rawCounts.size());
         for (var entry : rawCounts.entrySet()) {
             counts.put(formatNumericValue(entry.getKey(), isDouble), entry.getValue()[0]);
         }
         return buildTermsFacetResult(counts, req, !isDouble);
+    }
+
+    private static void incrementLongMap(HashMap<Long, long[]> map, long key) {
+        long[] count = map.get(key);
+        if (count == null) { map.put(key, new long[]{1}); } else { count[0]++; }
     }
 
     // =====================================================================

@@ -226,6 +226,7 @@ Facets are returned in `QueryResponse.facets` as a map of field name → `FacetR
 - **All matching docs** are counted (not just top-K), matching Azure AI Search behavior
 - **MatchAllDocs** queries use an optimized full DocValues column scan (no BitSet allocation)
 - **Filtered queries** use Lucene's `FacetsCollectorManager` for single-pass collection
+- **Concurrent segment search** via `IndexSearcher(reader, Executor)` — Lucene 10 parallelizes query execution, scoring, and facet collection across segments automatically
 - **Pagination** (`search_after`) does not affect facet counts — they always reflect the full query
 - **Hybrid search** + facets is not supported (clear error returned)
 
@@ -292,13 +293,13 @@ All benchmarks run on **Linux containers** with equal resources: **4 CPUs, 12GB 
 
 | Facet Type | Jigyasa p50 | ES 8.13 p50 | Speedup | Jigyasa p99 | ES p99 |
 |---|---|---|---|---|---|
-| Terms (1 field, 10 values) | **13.58ms** | 47.89ms | **3.5x** | 20.89ms | 108.79ms |
-| Terms (3 fields) | **36.09ms** | 49.78ms | **1.4x** | 42.91ms | 72.46ms |
-| Terms + text query | **8.94ms** | 28.85ms | **3.2x** | 14.07ms | 54.91ms |
-| Numeric range/histogram | **37.12ms** | 61.70ms | **1.7x** | 68.72ms | 87.90ms |
-| Numeric terms | **22.34ms** | 35.60ms | **1.6x** | 34.28ms | 64.31ms |
-| Text + filter + 3 facets | **12.56ms** | 13.06ms | **1.0x** | 22.30ms | 41.51ms |
-| **Average** | **21.77ms** | **39.48ms** | **1.8x** | **33.86ms** | **71.65ms** |
+| Terms (1 field, 10 values) | **11.00ms** | 47.89ms | **4.4x** | 20.34ms | 108.79ms |
+| Terms (3 fields) | **22.98ms** | 49.78ms | **2.2x** | 34.35ms | 72.46ms |
+| Terms + text query | **8.39ms** | 28.85ms | **3.4x** | 34.68ms | 54.91ms |
+| Numeric range/histogram | **22.60ms** | 61.70ms | **2.7x** | 43.92ms | 87.90ms |
+| Numeric terms | **19.93ms** | 35.60ms | **1.8x** | 37.02ms | 64.31ms |
+| Text + filter + 3 facets | **12.34ms** | 13.06ms | **1.1x** | 21.75ms | 41.51ms |
+| **Average** | **16.21ms** | **39.48ms** | **2.4x** | **32.01ms** | **71.65ms** |
 
 > Reproduce: `python benchmarks/benchmark_facets.py`
 
