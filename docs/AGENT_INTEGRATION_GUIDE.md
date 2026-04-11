@@ -33,10 +33,10 @@
 ./gradlew build
 
 # Run (default port 50051)
-java -cp build/libs/jigyasa-1.0-SNAPSHOT.jar com.jigyasa.dp.search.entrypoint.Main
+java -cp build/libs/Jigyasa-1.0.4-all.jar com.jigyasa.dp.search.entrypoint.Main
 
 # Override port
-GRPC_SERVER_PORT=9090 java -cp build/libs/jigyasa-1.0-SNAPSHOT.jar com.jigyasa.dp.search.entrypoint.Main
+GRPC_SERVER_PORT=9090 java -cp build/libs/Jigyasa-1.0.4-all.jar com.jigyasa.dp.search.entrypoint.Main
 ```
 
 **Environment variables:**

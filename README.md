@@ -50,15 +50,17 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 **Download** the latest release from [GitHub Releases](https://github.com/lokeshmavale/jigyasa/releases) — no build required:
 
 ```bash
-# Option 1: Download fat JAR and run
-curl -LO https://github.com/lokeshmavale/jigyasa/releases/latest/download/Jigyasa-all.jar
-java --add-modules jdk.incubator.vector -Xms1g -Xmx1g -jar Jigyasa-all.jar
+# Option 1: Download fat JAR and run (replace VERSION with latest, e.g. 1.0.4)
+curl -LO https://github.com/lokeshmavale/jigyasa/releases/download/v1.0.4/Jigyasa-1.0.4-all.jar
+java --add-modules jdk.incubator.vector -Xms1g -Xmx1g -jar Jigyasa-1.0.4-all.jar
 
 # Option 2: Docker
 docker run -p 50051:50051 ghcr.io/lokeshmavale/jigyasa:latest
 
 # Option 3: Gradle dependency (GitHub Packages)
-# build.gradle: implementation 'com.jigyasa.search:jigyasa:1.0.0'
+# build.gradle:
+#   repositories { maven { url 'https://maven.pkg.github.com/lokeshmavale/jigyasa' } }
+#   dependencies { implementation 'com.jigyasa.search:jigyasa:1.0.4' }
 
 # Option 4: Build from source
 ./gradlew run                                          # → localhost:50051
@@ -121,6 +123,8 @@ python smoke_test.py                                   # e2e against running ser
 ## Roadmap
 
 - [x] Faceted navigation — terms, numeric range/interval, date histogram (Azure AI Search–style)
+- [x] Production hardening — memory circuit breaker, bounded queues, concurrent segment search
+- [x] CI/CD — GitHub Actions build + release pipeline with JAR, Docker, Maven packages
 - [ ] Engram Python SDK — drop-in `EngramCheckpointer` for LangGraph
 - [ ] Learning-to-Rank — agent task outcomes feed retrieval scoring
 - [ ] More-Like-This, Auth (API key + mTLS)

@@ -28,7 +28,7 @@ pip install grpcio grpcio-tools grpcio-reflection googleapis-common-protos
 ```bash
 cd ..
 ./gradlew shadowJar
-java -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar
+java -jar build/libs/Jigyasa-1.0.4-all.jar
 ```
 
 ### 2. Start Elasticsearch (for comparison only)

@@ -16,7 +16,7 @@ ENV GRPC_SERVER_PORT=50051
 ENV INDEX_CACHE_DIR=/data/index
 ENV TRANSLOG_DIRECTORY=/data/translog
 ENV SERVER_MODE=READ_WRITE
-ENV JAVA_OPTS="-Xms256m -Xmx1g -XX:+UseG1GC"
+ENV JAVA_OPTS="-Xms256m -Xmx1g -XX:+UseG1GC --add-modules jdk.incubator.vector -Dlucene.useScalarFMA=true -Dlucene.useVectorFMA=true"
 
 EXPOSE 50051
 

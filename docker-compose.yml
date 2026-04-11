@@ -14,7 +14,7 @@ services:
       - INDEX_CACHE_DIR=/data/index
       - TRANSLOG_DIRECTORY=/data/translog
       - SERVER_MODE=READ_WRITE
-      - JAVA_OPTS=-Xms256m -Xmx1g -XX:+UseG1GC
+      - JAVA_OPTS=-Xms256m -Xmx1g -XX:+UseG1GC --add-modules jdk.incubator.vector -Dlucene.useScalarFMA=true -Dlucene.useVectorFMA=true
     restart: unless-stopped
 
 volumes:

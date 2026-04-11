@@ -7,7 +7,7 @@ Get Jigyasa running and execute your first search in 5 minutes.
 ```bash
 # From the jigyasa root directory
 ./gradlew shadowJar
-java -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar
+java -jar build/libs/Jigyasa-1.0.4-all.jar
 ```
 
 ## Option B: Docker

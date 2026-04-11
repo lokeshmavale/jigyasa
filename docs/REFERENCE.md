@@ -59,7 +59,7 @@ Jigyasa persists two categories of data to disk. Both paths are configurable via
 # Store index on fast SSD, translog on durable storage
 export INDEX_CACHE_DIR=/mnt/ssd/jigyasa/index
 export TRANSLOG_DIRECTORY=/mnt/persistent/jigyasa/translog
-java -jar Jigyasa-1.0-SNAPSHOT-all.jar
+java -jar Jigyasa-1.0.4-all.jar
 ```
 
 Docker — mount a volume:
