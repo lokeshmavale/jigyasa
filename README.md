@@ -20,9 +20,10 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 ## Highlights
 
 - **12 query types** — BM25, phrase, fuzzy, prefix, query-string, KNN, hybrid RRF, term/range/geo/boolean filters
-- **Faceted navigation** — Azure AI Search–style terms, numeric range, date histogram facets on all matching docs
+- **Faceted navigation** — Azure AI Search–style terms, numeric range, date histogram facets across all matching documents
+- **Production-grade** — memory circuit breaker, bounded request queues, concurrent segment search, translog WAL
+- **Schema-driven** — STRING, INT32/64, DOUBLE, VECTOR, GEO_POINT with per-field search/filter/sort/facet controls
 - **12 gRPC RPCs** — index, query, lookup, count, delete-by-query, schema, collections, health, force-merge
-- **Schema-driven** — STRING, INT32/64, FLOAT, DOUBLE, VECTOR, GEO_POINT with per-field search/filter/sort/facet
 - **NRT search** — 25ms refresh, recency decay scoring, multi-tenant isolation
 - **Agent-ready** — built-in memory tiers (WORKING/EPISODIC/SEMANTIC) with TTL sweeper for LLM agent workflows
 
@@ -46,23 +47,22 @@ Deploy it in edge services, embedded search, microservices, CI pipelines, or as 
 
 ## Quick Start
 
+**Download** the latest release from [GitHub Releases](https://github.com/lokeshmavale/engram/releases) — no build required:
+
 ```bash
-# Start the server (with SIMD + memory optimization)
+# Option 1: Download fat JAR and run
+curl -LO https://github.com/lokeshmavale/engram/releases/latest/download/Jigyasa-all.jar
+java --add-modules jdk.incubator.vector -Xms1g -Xmx1g -jar Jigyasa-all.jar
+
+# Option 2: Docker
+docker run -p 50051:50051 ghcr.io/lokeshmavale/engram:latest
+
+# Option 3: Gradle dependency (GitHub Packages)
+# build.gradle: implementation 'com.jigyasa.search:jigyasa:1.0.0'
+
+# Option 4: Build from source
 ./gradlew run                                          # → localhost:50051
-
-# Or build a fat JAR and use the launcher script
-./gradlew shadowJar
-./jigyasa.sh                                           # Linux/macOS (all prod flags)
-jigyasa.bat                                            # Windows (all prod flags)
-
-# Or launch manually with full optimization
-java --add-modules jdk.incubator.vector \
-     -Dlucene.useScalarFMA=true -Dlucene.useVectorFMA=true \
-     -XX:+AlwaysPreTouch -Xms1g -Xmx1g \
-     -jar build/libs/Jigyasa-1.0-SNAPSHOT-all.jar
-
-# Docker
-docker compose up -d
+./gradlew shadowJar                                    # build fat JAR
 ```
 
 ## Usage

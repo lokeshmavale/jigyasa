@@ -150,7 +150,9 @@ For detailed analyzer behavior, see the [Lucene Analysis documentation](https://
 
 ### Faceted Navigation
 
-Jigyasa supports Azure AI Search–style faceted navigation. Mark fields as `facetable` in the schema, then pass `FacetRequest` entries in your query. Facets are computed over **all matching documents**, not just the top-K results.
+Azure AI Search–style faceted navigation — mark fields as `facetable`, attach `FacetRequest` entries to any query, and get value counts across **all matching documents** in the response.
+
+**2.4x faster than Elasticsearch 8.13** at 1M documents ([benchmarks](#facets--aggregations-1m-docs-e-commerce-dataset)).
 
 #### Schema Setup
 
@@ -164,21 +166,21 @@ Jigyasa supports Azure AI Search–style faceted navigation. Mark fields as `fac
 
 | Type | When Applied | Example |
 |---|---|---|
-| **Terms** | STRING, BOOLEAN, or numeric fields with no `interval` | Top categories by count |
-| **Numeric range** | Numeric field + `interval` set | Price buckets: 0-100, 100-200, ... |
-| **Date histogram** | DATE_TIME_OFFSET field + `date_interval` set | Posts per month |
-| **Explicit values** | Any facetable field + `values` list | Only show ratings 1, 2, 3, 4, 5 |
+| **Terms** | STRING, BOOLEAN, or numeric field — no `interval` | Top categories by count |
+| **Numeric range** | Numeric field + `interval` | Price buckets: 0–100, 100–200, … |
+| **Date histogram** | DATE_TIME_OFFSET field + `date_interval` | Posts per month |
+| **Explicit values** | Any facetable field + `values` list | Only ratings 1, 2, 3, 4, 5 |
 
 #### Request Examples (gRPC / Python)
 
 ```python
-# Terms facet — top 5 categories
+# Terms — top 5 categories
 pb.FacetRequest(field="category", count=5)
 
-# Terms facet — sorted alphabetically
+# Terms — sorted alphabetically
 pb.FacetRequest(field="category", count=10, sort=pb.VALUE_ASC)
 
-# Numeric range — price buckets of 100
+# Numeric range — price buckets of $100
 pb.FacetRequest(field="price", interval=100)
 
 # Date histogram — monthly buckets
@@ -190,7 +192,7 @@ pb.FacetRequest(field="rating", values=["1", "2", "3", "4", "5"])
 
 #### Response Format
 
-Facets are returned in `QueryResponse.facets` as a map of field name → `FacetResult`:
+Facets are returned in `QueryResponse.facets` — a map of field name to buckets:
 
 ```json
 {
@@ -217,20 +219,25 @@ Facets are returned in `QueryResponse.facets` as a map of field name → `FacetR
 | Parameter | Default | Description |
 |---|---|---|
 | `field` | (required) | Must be marked `facetable` in schema |
-| `count` | `10` | Max buckets. Set 0 for all unique values |
+| `count` | `10` | Max buckets returned. Set `0` for all unique values |
 | `sort` | `COUNT_DESC` | `COUNT_DESC`, `COUNT_ASC`, `VALUE_ASC`, `VALUE_DESC` |
-| `interval` | (none) | Numeric range bucket width (mutually exclusive with `values`) |
-| `values` | (none) | Explicit value list (mutually exclusive with `interval`) |
-| `date_interval` | (none) | `MINUTE`, `HOUR`, `DAY`, `MONTH`, `YEAR` |
+| `interval` | — | Numeric range bucket width (mutually exclusive with `values`) |
+| `values` | — | Explicit value filter (mutually exclusive with `interval`) |
+| `date_interval` | — | `MINUTE`, `HOUR`, `DAY`, `MONTH`, `YEAR` |
 
-#### Internals
+#### How It Works
 
-- **All matching docs** are counted (not just top-K), matching Azure AI Search behavior
-- **MatchAllDocs** queries use an optimized full DocValues column scan (no BitSet allocation)
-- **Filtered queries** use Lucene's `FacetsCollectorManager` for single-pass collection
-- **Concurrent segment search** via `IndexSearcher(reader, Executor)` — Lucene 10 parallelizes query execution, scoring, and facet collection across segments automatically
-- **Pagination** (`search_after`) does not affect facet counts — they always reflect the full query
-- **Hybrid search** + facets is not supported (clear error returned)
+| Concern | Approach |
+|---|---|
+| **Accuracy** | Counts all matching docs, not just top-K — matches Azure AI Search |
+| **MatchAll optimization** | Full DocValues column scan — no BitSet, no FacetsCollector overhead |
+| **Filtered queries** | Single-pass via `FacetsCollectorManager` — search + facets in one traversal |
+| **Concurrent segments** | Lucene 10 parallelizes collection across segments automatically |
+| **Pagination** | `search_after` does not affect facet counts — always reflects full query |
+| **Hybrid search** | Facets not supported with hybrid (text + vector) — clear error returned |
+| **Ordinal counting** | String facets use `int[]` per segment for cache-friendly counting |
+| **Numeric terms** | Primitive `long→long` map — zero autoboxing in hot loop |
+| **Date histogram** | Epoch-ms integer arithmetic — no `ZonedDateTime` allocations |
 
 ## API Reference
 
@@ -307,30 +314,38 @@ All benchmarks run on **Linux containers** with equal resources: **4 CPUs, 12GB 
 
 ## Production Hardening
 
+Jigyasa is built for production from day one. Three layers of protection prevent a single runaway query from taking down the server.
+
 ### Memory Circuit Breaker
 
-Jigyasa includes an ES-style memory circuit breaker that rejects user-facing requests when JVM heap usage exceeds a configurable threshold (default: 95%). Background tasks (commits, TTL sweeps, translog flushes) are never affected.
+Inspired by Elasticsearch's `HierarchyCircuitBreakerService`. Monitors real JVM heap usage and rejects user-facing requests before the JVM hits OOM — while background tasks (commits, TTL sweeps, translog flushes) continue uninterrupted.
 
-**Behavior:**
-1. Checks real heap via `MemoryMXBean.getHeapMemoryUsage()` on every request (~50ns)
-2. If above threshold, nudges GC once (30s cooldown) and re-checks
-3. If still above, returns gRPC `RESOURCE_EXHAUSTED` until memory recovers
-4. Auto-recovers when heap drops below threshold
-5. Health API reports `circuit_breaker_tripped` and `circuit_breaker_trip_count`
+| Step | What Happens |
+|---|---|
+| Every request | Checks `MemoryMXBean.getHeapMemoryUsage()` (~50ns, no allocation) |
+| Heap ≥ 95% | Nudges GC once (30s cooldown), re-checks |
+| Still ≥ 95% | Returns gRPC `RESOURCE_EXHAUSTED` — client backs off |
+| Heap drops below | Auto-recovers, next request succeeds |
+| Health API | Always responds — reports `circuit_breaker_tripped` and `trip_count` |
 
-**Configuration:**
+Handles JDK-8207200 race condition in `MemoryMXBean` gracefully (same bug ES handles).
+
 ```bash
-export CIRCUIT_BREAKER_HEAP_THRESHOLD=0.95  # default: 95%
-export CIRCUIT_BREAKER_ENABLED=true         # set "false" to disable
+export CIRCUIT_BREAKER_HEAP_THRESHOLD=0.95   # default: trip at 95% heap
+export CIRCUIT_BREAKER_ENABLED=true          # set "false" to disable
 ```
 
 ### Bounded Request Queue
 
-The gRPC handler thread pool uses a bounded queue (capacity: 1000) to prevent OOM under burst load. When full, `CallerRunsPolicy` executes on the gRPC I/O thread, applying natural TCP-level backpressure without dropping requests.
+The gRPC handler thread pool uses a bounded queue (capacity: 1000 requests). Under burst load:
+
+- Queue absorbs up to 1000 pending requests (~5 seconds of work at 5ms/request)
+- When full, `CallerRunsPolicy` executes on the gRPC I/O thread — this applies natural TCP-level backpressure without dropping any request
+- The client experiences higher latency instead of errors
 
 ### Concurrent Segment Search
 
-`IndexSearcher` is created with an `Executor` (ES-style thread sizing: `cpus × 1.5 + 1`). Lucene 10.4 automatically parallelizes query execution, scoring, and `CollectorManager` operations across segments.
+`IndexSearcher` is created with an `Executor` using ES-style thread sizing (`cpus × 1.5 + 1`). Lucene 10.4 automatically parallelizes query execution, scoring, and `CollectorManager` operations (including facets) across segments — no application-level threading code needed.
 
 ## Performance Tuning
 

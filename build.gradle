@@ -118,7 +118,7 @@ compileJava {
 }
 
 group = 'com.jigyasa.search'
-version = '1.0-SNAPSHOT'
+version = System.getenv('GITHUB_REF_NAME')?.replaceFirst('^v', '') ?: '1.0-SNAPSHOT'
 description = 'Jigyasa — Lucene-based search engine'
 
 java {
@@ -130,6 +130,35 @@ publishing {
     publications {
         maven(MavenPublication) {
             from(components.java)
+            artifactId = 'jigyasa'
+
+            pom {
+                name = 'Jigyasa'
+                description = 'Lightweight Elasticsearch alternative — full-text, vector, and hybrid search in a single JAR'
+                url = 'https://github.com/lokeshmavale/engram'
+                licenses {
+                    license {
+                        name = 'Apache License 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'lokeshmavale'
+                        name = 'Lokesh Mawale'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri("https://maven.pkg.github.com/${System.getenv('GITHUB_REPOSITORY') ?: 'lokeshmavale/engram'}")
+            credentials {
+                username = System.getenv('GITHUB_ACTOR') ?: ''
+                password = System.getenv('GITHUB_TOKEN') ?: ''
+            }
         }
     }
 }

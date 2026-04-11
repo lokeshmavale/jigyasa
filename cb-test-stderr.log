@@ -1,0 +1,3 @@
+WARNING: Using incubator modules: jdk.incubator.vector
+Apr 11, 2026 11:23:51 AM org.apache.lucene.internal.vectorization.PanamaVectorizationProvider <init>
+INFO: Java vector incubator API enabled; uses preferredBitSize=512; FMA enabled
