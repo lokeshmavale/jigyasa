@@ -16,10 +16,10 @@ Every example ships in **both Java and Python** so you can follow along in the l
 |---|---------|-------------------|------|
 | [00](00-quickstart/) | **Quickstart** | Start server, health check, index & search | 5 min |
 | [01](01-schema-and-indexing/) | **Schema & Indexing** | Typed schemas, bulk indexing, lookup, count | 15 min |
-| [02](02-query-cookbook/) | **Query Cookbook** | All 12 query types with working examples | 30 min |
+| [02](02-query-cookbook/) | **Query Cookbook** | All 13 query types with working examples (incl. timeout) | 30 min |
 | [03](03-vector-and-hybrid/) | **Vector & Hybrid Search** | KNN similarity, hybrid RRF fusion | 20 min |
 | [04](04-configuration/) | **Configuration** | Memory tiers, TTL, durability modes | 15 min |
-| [05](05-ops-and-multitenancy/) | **Ops & Multi-tenancy** | Collection lifecycle, tenant isolation, admin | 15 min |
+| [05](05-ops-and-multitenancy/) | **Ops & Multi-tenancy** | Collection lifecycle, tenant isolation, Prometheus metrics, admin | 15 min |
 | [06](06-e-commerce-app/) | **E-commerce App** | Full search application with UI | 1 hr |
 | [07](07-multi-language-analyzers/) | **Multi-Language Analyzers** | Per-field analyzers, 42 languages, stemming comparison | 20 min |
 

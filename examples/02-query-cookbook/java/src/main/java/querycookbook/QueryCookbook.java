@@ -279,6 +279,23 @@ public class QueryCookbook {
                 .build()));
     }
 
+    private static void queryTimeout(JigyasaDataPlaneServiceGrpc.JigyasaDataPlaneServiceBlockingStub stub) {
+        banner("13. Query timeout — partial results with deadline");
+        QueryResponse resp = stub.query(QueryRequest.newBuilder()
+                .setCollection(COLLECTION)
+                .setTextQuery("premium quality")
+                .setTopK(10)
+                .setTimeoutMs(5000)
+                .setIncludeSource(true)
+                .build());
+        System.out.println("  timed_out: " + resp.getTimedOut());
+        System.out.println("  hits returned: " + resp.getHitsCount());
+        if (resp.getTimedOut()) {
+            System.out.println("  ⚠ Query hit timeout — results may be partial, facets skipped");
+        }
+        printHits(resp);
+    }
+
     // ── Main ────────────────────────────────────────────────────────────────
 
     public static void main(String[] args) throws Exception {
@@ -303,9 +320,10 @@ public class QueryCookbook {
             queryCompoundFilter(stub);
             querySort(stub);
             queryCombined(stub);
+            queryTimeout(stub);
 
             System.out.println("\n" + "=".repeat(60));
-            System.out.println("  All 12 queries completed!");
+            System.out.println("  All 13 queries completed!");
             System.out.println("=".repeat(60) + "\n");
         } finally {
             channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);

@@ -11,6 +11,28 @@ Demonstrates operational RPCs and multi-tenant data isolation in Jigyasa.
 | 3 | **Multi-tenancy** | `Index` with `tenant_id`, `Query` / `Count` scoped to a tenant |
 | 4 | **Delete by query** | `DeleteByQuery` with tenant-scoped filter |
 | 5 | **Force merge** | `ForceMerge` to compact segments |
+| 6 | **Prometheus metrics** | Scrape `http://localhost:9090/metrics` for operational metrics |
+
+## Prometheus Metrics
+
+Jigyasa exposes a `/metrics` HTTP endpoint (default port 9090) for Prometheus scraping.
+
+```bash
+# Verify metrics endpoint (server must be running)
+curl http://localhost:9090/metrics | grep jigyasa_
+
+# Example output after some traffic:
+# jigyasa_requests_total{rpc="Query",collection="default",status="ok"} 42.0
+# jigyasa_request_duration_seconds_sum{rpc="Query",...} 0.312
+# jigyasa_active_requests{rpc="Query"} 0.0
+# jigyasa_circuit_breaker_status 0.0
+# jigyasa_threadpool_active{pool="handler"} 0.0
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `METRICS_ENABLED` | `true` | Set to `false` to disable (zero overhead) |
+| `METRICS_PORT` | `9090` | HTTP port for `/metrics` |
 
 ## Schema
 

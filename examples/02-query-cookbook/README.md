@@ -22,6 +22,7 @@ products, then run the queries listed below.
 | 10 | **Boolean compound filter** | `(category=electronics OR category=sports) AND NOT brand=FlexZone` |
 | 11 | **Sort** | By price descending |
 | 12 | **Combined** | Text search + filter + sort in one request |
+| 13 | **Query timeout** | `timeout_ms=5000` — partial results with deadline, `timed_out` flag |
 
 ## Running
 

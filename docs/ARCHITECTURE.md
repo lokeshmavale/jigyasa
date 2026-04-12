@@ -42,8 +42,10 @@ The gRPC server uses a split I/O + handler architecture:
 - `AnweshanDataPlaneImpl` — routes 12 RPCs to handlers
 
 ### Handlers
+- `RequestHandlerBase` — template method for all user-facing RPCs: circuit breaker check → metrics instrumentation → delegate to handler → record status
+- `StatusTrackingObserver` — wraps gRPC `StreamObserver` to detect `onError()` from handlers that catch internally, ensuring metrics record the correct status
 - `IndexRequestHandler` — bulk index/update/delete with translog write-ahead
-- `QueryRequestHandler` — delegates to query pipeline
+- `QueryRequestHandler` — delegates to query pipeline, creates `PerRequestSearcher` for timeout isolation
 - `LookupRequestHandler` — point lookups by document key
 - `RecoveryCommitServiceISCH` — translog replay on startup
 
@@ -53,6 +55,7 @@ The gRPC server uses a split I/O + handler architecture:
 
 ### Query Pipeline
 - `BaseQueryBuilder` → `QueryPipeline` → `Executor`
+- `PerRequestSearcher` — per-request `IndexSearcher` wrapping the shared `IndexReader` for timeout isolation (ES `ContextIndexSearcher` pattern). Shares reader/cache/executor, owns its own `QueryTimeout`. Cost: ~10µs.
 - `RecencyDecayModifier` — time-based score boosting
 - `FilterQueryBuilder` — term, range, geo-distance, geo-bbox, boolean composition
 - `SortBuilder` — field sort, geo-distance sort, relevance score
@@ -68,3 +71,9 @@ The gRPC server uses a split I/O + handler architecture:
 ### DI & Config
 - Guice `ServiceModules` — wires all components
 - `ConfigSupplierModule` — environment variable configuration
+
+### Observability
+- `MetricsRecorder` — vendor-agnostic recording interface (ISP: no lifecycle methods)
+- `PrometheusMetricsService` — Micrometer + Prometheus HTTP exporter on port 9090. Registers 14 custom metrics + ~30 JVM metrics via binders. ConcurrentHashMap meter cache for zero-alloc hot path (137ns/request).
+- `NoopMetricsService` — zero-overhead disabled mode (3ns/request)
+- `MemoryCircuitBreaker` — ES-style real-heap circuit breaker with GC nudge, auto-recovery, trip counter

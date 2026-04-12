@@ -263,6 +263,22 @@ def query_combined(stub):
     ))
     print_hits(resp)
 
+
+def query_timeout(stub):
+    banner("13. Query timeout — partial results with deadline")
+    resp = stub.Query(pb.QueryRequest(
+        collection=COLLECTION,
+        text_query="premium quality",
+        top_k=10,
+        timeout_ms=5000,
+        include_source=True,
+    ))
+    print(f"  timed_out: {resp.timed_out}")
+    print(f"  hits returned: {len(resp.hits)}")
+    if resp.timed_out:
+        print("  ⚠ Query hit timeout — results may be partial, facets skipped")
+    print_hits(resp)
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -283,9 +299,10 @@ def main():
     query_compound_filter(stub)
     query_sort(stub)
     query_combined(stub)
+    query_timeout(stub)
 
     print(f"\n{'='*60}")
-    print("  All 12 queries completed!")
+    print("  All 13 queries completed!")
     print(f"{'='*60}\n")
 
 if __name__ == "__main__":
