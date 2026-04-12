@@ -258,6 +258,38 @@ gRPC API defined in [`dpSearch.proto`](../src/main/proto/dpSearch.proto).
 | `Health` | Server and per-collection health |
 | `ForceMerge` | Compact Lucene segments |
 
+### Query Timeout
+
+Every query supports an optional timeout. If the query exceeds the timeout, Lucene stops collecting and returns **partial results** with `timed_out: true`.
+
+```python
+resp = stub.Query(pb.QueryRequest(
+    collection="products",
+    text_query="electronics",
+    top_k=100,
+    timeout_ms=200  # 200ms timeout
+))
+
+if resp.timed_out:
+    print(f"Partial results: {len(resp.hits)} hits (total_hits ≥ {resp.total_hits})")
+    # Facets are empty on timeout — they'd be incomplete
+else:
+    print(f"Complete: {resp.total_hits} hits, {len(resp.facets)} facets")
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `timeout_ms = 0` | Server default (30s) | Soft timeout — returns partial results |
+| `timeout_ms > 0` | User-specified | Query stops after this many milliseconds |
+| `timeout_ms < 0` | No timeout | Query runs to completion |
+
+**On timeout:**
+- `timed_out = true` in response
+- `total_hits_exact = false` (hit count is a lower bound)
+- `hits` contains whatever was collected before timeout
+- `facets` are empty (skipped — partial facet counts are misleading)
+- Each query gets its own timeout via a per-request IndexSearcher (ES ContextIndexSearcher pattern) — thread-safe, ~10µs overhead
+
 ## Full Benchmark Results
 
 All benchmarks run on **Linux containers** with equal resources: **4 CPUs, 12GB memory, 8GB JVM heap, 1 shard, 0 replicas**. Jigyasa uses REQUEST durability (fsync per operation), SIMD vectorization enabled, mlockall active.
@@ -346,6 +378,63 @@ The gRPC handler thread pool uses a bounded queue (capacity: 1000 requests). Und
 ### Concurrent Segment Search
 
 `IndexSearcher` is created with an `Executor` using ES-style thread sizing (`cpus × 1.5 + 1`). Lucene 10.4 automatically parallelizes query execution, scoring, and `CollectorManager` operations (including facets) across segments — no application-level threading code needed.
+
+## Prometheus Metrics
+
+Jigyasa exposes operational metrics in Prometheus exposition format via an HTTP endpoint.
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `METRICS_ENABLED` | `true` | Set to `false` to disable metrics entirely (zero overhead) |
+| `METRICS_PORT` | `9090` | HTTP port for the `/metrics` endpoint |
+
+### Scrape Configuration
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'jigyasa'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:9090']
+```
+
+### Custom Metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `jigyasa_request_duration_seconds` | Histogram | rpc, collection, status | Request latency with SLO buckets |
+| `jigyasa_requests_total` | Counter | rpc, collection, status | Total request count |
+| `jigyasa_active_requests` | Gauge | rpc | In-flight requests per RPC |
+| `jigyasa_facet_duration_seconds` | Histogram | collection, type | Facet computation latency |
+| `jigyasa_index_duration_seconds` | Histogram | collection | Write batch latency |
+| `jigyasa_index_docs_total` | Counter | collection | Indexed document count |
+| `jigyasa_circuit_breaker_status` | Gauge | — | 1 = tripped, 0 = healthy |
+| `jigyasa_circuit_breaker_trips` | Gauge | — | Total trip count |
+| `jigyasa_threadpool_active` | Gauge | pool | Active handler threads |
+| `jigyasa_threadpool_queue_size` | Gauge | pool | Queued requests |
+| `jigyasa_collections_total` | Gauge | — | Active collection count |
+
+### JVM Metrics (Automatic)
+
+~30 metrics auto-registered via Micrometer binders:
+- `jvm_memory_*` — heap/non-heap usage, buffer pools
+- `jvm_gc_*` — GC pause duration, collection counts
+- `jvm_threads_*` — thread states, daemon/live counts
+- `process_cpu_*` — CPU usage, available processors
+- `process_uptime_seconds` — server uptime
+
+### Label Values
+
+- **rpc**: `Query`, `Index`, `Lookup`, `DeleteByQuery`, `UpdateSchema`
+- **status**: `ok`, `error`, `invalid`, `rejected`
+- **collection**: actual collection name, `default`, or `_unknown` (for invalid names)
+
+### Overhead
+
+137 ns per request (~0.003% of a 5ms query). When disabled (`METRICS_ENABLED=false`), the `NoopMetricsService` adds 3 ns per request.
 
 ## Performance Tuning
 

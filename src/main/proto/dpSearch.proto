@@ -149,6 +149,10 @@ message QueryRequest {
   // Faceted navigation: compute value counts / range buckets for specified fields.
   // Fields must be marked facetable in the schema. Counts reflect ALL matching documents.
   repeated FacetRequest facets = 27;
+
+  // Query timeout in milliseconds. If exceeded, returns partial results with timed_out=true.
+  // 0 = use server default (30s). Facets and highlights are skipped on timeout.
+  int32 timeout_ms = 28;
 }
 
 message VectorQuery {
@@ -245,6 +249,7 @@ message QueryResponse {
   bool total_hits_exact = 3;  // false when total_hits is a lower bound
   SearchAfterToken next_search_after = 4;  // Token for fetching next page
   map<string, FacetResult> facets = 5;     // Facet field name → result buckets
+  bool timed_out = 6;                      // True if query hit timeout, results may be partial
 }
 
 message QueryHit {

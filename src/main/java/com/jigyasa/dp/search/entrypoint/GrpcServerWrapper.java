@@ -2,7 +2,9 @@ package com.jigyasa.dp.search.entrypoint;
 
 import com.google.inject.Inject;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
+import com.jigyasa.dp.search.metrics.MetricsService;
 import com.jigyasa.dp.search.models.IndexSchema;
+import com.jigyasa.dp.search.services.RequestHandlerBase;
 import io.grpc.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,20 +17,23 @@ public class GrpcServerWrapper {
     private final Server server;
     private final CollectionRegistry registry;
     private final IndexSchemaReader schemaReader;
+    private final MetricsService metricsService;
 
     @Inject
     public GrpcServerWrapper(Server server, CollectionRegistry registry,
-                             IndexSchemaReader schemaReader) {
+                             IndexSchemaReader schemaReader, MetricsService metricsService) {
         this.server = server;
         this.registry = registry;
         this.schemaReader = schemaReader;
+        this.metricsService = metricsService;
     }
 
     public void start() {
         try {
-            // Read default schema and initialize the default collection
             IndexSchema defaultSchema = schemaReader.readSchema();
             registry.initialize(defaultSchema);
+            RequestHandlerBase.setMetricsRecorder(metricsService);
+            metricsService.start();
             server.start();
             log.info("gRPC server started on port {}", server.getPort());
             registerShutdownHook();
@@ -64,8 +69,9 @@ public class GrpcServerWrapper {
             log.error("Error during shutdown", e);
             server.shutdownNow();
         } finally {
-            // Always close collections even if server shutdown fails/is interrupted
+            // Always close collections and metrics even if server shutdown fails/is interrupted
             try {
+                metricsService.stop();
                 registry.shutdownAll();
             } catch (Exception e) {
                 log.error("Error shutting down collection registry", e);

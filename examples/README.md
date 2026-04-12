@@ -54,7 +54,7 @@ cd 01-schema-and-indexing/python && python schema_and_indexing.py
 
 ### 02 — Query Cookbook
 
-A complete tour of all 12 query types Jigyasa supports, each with a working example against real data:
+A complete tour of all query types Jigyasa supports, each with a working example against real data:
 
 1. **BM25 text search** — ranked full-text retrieval
 2. **Phrase query** — exact phrase with configurable slop
@@ -68,6 +68,8 @@ A complete tour of all 12 query types Jigyasa supports, each with a working exam
 10. **Boolean compound** — combine filters with AND/OR/NOT
 11. **Sort** — order results by any sortable field
 12. **Combined** — text + filter + sort in one query
+13. **Faceted search** — category, price range, and rating facets
+14. **Query timeout** — partial results with configurable deadline
 
 ```bash
 cd 02-query-cookbook/python && python query_cookbook.py

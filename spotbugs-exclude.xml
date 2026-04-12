@@ -37,8 +37,10 @@
             <Class name="com.jigyasa.dp.search.models.InitializedIndexSchema"/>
             <!-- PerFieldAnalyzer: returns analyzer map, callers don't mutate -->
             <Class name="com.jigyasa.dp.search.text.PerFieldAnalyzer"/>
-            <!-- SourceVisitor: binaryField stores ref from Lucene; getSrc() returns clone -->
+            <!-- SourceVisitor: binaryField stores ref from Lucene; getSrc() returns raw ref -->
             <Class name="com.jigyasa.dp.search.utils.SourceVisitor"/>
+            <!-- PerRequestSearcher: intentionally exposes IndexSearcher to caller -->
+            <Class name="com.jigyasa.dp.search.query.PerRequestSearcher"/>
         </Or>
     </Match>
 

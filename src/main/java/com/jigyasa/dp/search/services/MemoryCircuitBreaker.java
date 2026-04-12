@@ -3,10 +3,8 @@ package com.jigyasa.dp.search.services;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -150,6 +148,14 @@ public class MemoryCircuitBreaker {
             log.debug("MemoryMXBean race condition (JDK-8207200), returning 0");
             return 0;
         }
+    }
+
+    /**
+     * Returns the cached tripped state without side effects.
+     * Use this for metric scraping to avoid triggering GC nudges on every Prometheus scrape.
+     */
+    public boolean isTrippedStatus() {
+        return tripped;
     }
 
     /** Total number of times the breaker has tripped. Useful for monitoring/alerting. */

@@ -70,6 +70,4 @@ public class LookupRequestHandler extends RequestHandlerBase<LookupRequest, Look
             observer.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).withCause(e).asRuntimeException());
         }
     }
-
-
 }

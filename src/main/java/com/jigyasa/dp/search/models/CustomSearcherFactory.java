@@ -29,6 +29,11 @@ public class CustomSearcherFactory extends SearcherFactory {
                 return t;
             });
 
+    /** Shared executor for concurrent segment search. Used by PerRequestSearcher. */
+    public static Executor getSearchExecutor() {
+        return SEARCH_EXECUTOR;
+    }
+
     @Override
     public IndexSearcher newSearcher(IndexReader reader, IndexReader prevReader) throws IOException {
         IndexSearcher searcher = new IndexSearcher(reader, SEARCH_EXECUTOR);

@@ -5,6 +5,9 @@ import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import com.google.inject.name.Named;
 import com.jigyasa.dp.search.collections.CollectionRegistry;
+import com.jigyasa.dp.search.metrics.MetricsService;
+import com.jigyasa.dp.search.metrics.NoopMetricsService;
+import com.jigyasa.dp.search.metrics.PrometheusMetricsService;
 import com.jigyasa.dp.search.entrypoint.FileBasedSchemaReader;
 import com.jigyasa.dp.search.entrypoint.GrpcServerWrapper;
 import com.jigyasa.dp.search.entrypoint.IndexManager;
@@ -25,7 +28,6 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.nio.file.Path;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -38,24 +40,25 @@ public class ServiceModules extends AbstractModule {
 
     @Provides
     @Singleton
-    public Server provideGrpcServer(AnweshanDataPlaneImpl anweshanDataPlaneService,
-                                    @Named("GrpcServerPort") String port) {
+    @Named("HandlerExecutor")
+    public ThreadPoolExecutor provideHandlerExecutor() {
         int cpus = Runtime.getRuntime().availableProcessors();
-
-        // Netty event loop for I/O only (accept + read/write) — 2 threads is sufficient
-        // since Jigyasa is single-node and gRPC multiplexes over few TCP connections.
-        NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup(2,
-                new DefaultThreadFactory("jigyasa-io", true));
-
-        // Dedicated handler thread pool — bounded queue (ES-style) prevents OOM under burst.
-        // Queue capacity 1000: at ~5ms/request, this is ~5s of buffered work.
-        // When full, ThreadPoolExecutor.CallerRunsPolicy executes on the gRPC I/O thread,
-        // applying natural backpressure without dropping requests.
-        ExecutorService handlerExecutor = new ThreadPoolExecutor(
+        return new ThreadPoolExecutor(
                 cpus, cpus, 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(HANDLER_QUEUE_CAPACITY),
                 new DefaultThreadFactory("jigyasa-handler", true),
                 new ThreadPoolExecutor.CallerRunsPolicy());
+    }
+
+    @Provides
+    @Singleton
+    public Server provideGrpcServer(AnweshanDataPlaneImpl anweshanDataPlaneService,
+                                    @Named("GrpcServerPort") String port,
+                                    @Named("HandlerExecutor") ThreadPoolExecutor handlerExecutor) {
+        // Netty event loop for I/O only (accept + read/write) — 2 threads is sufficient
+        // since Jigyasa is single-node and gRPC multiplexes over few TCP connections.
+        NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup(2,
+                new DefaultThreadFactory("jigyasa-io", true));
 
         return NettyServerBuilder.forPort(Integer.parseInt(port))
                 .executor(handlerExecutor)
@@ -75,8 +78,30 @@ public class ServiceModules extends AbstractModule {
     @Singleton
     public GrpcServerWrapper provideGrpcServerWrapper(Server server,
                                                        CollectionRegistry registry,
-                                                       IndexSchemaReader schemaReader) {
-        return new GrpcServerWrapper(server, registry, schemaReader);
+                                                       IndexSchemaReader schemaReader,
+                                                       MetricsService metricsService) {
+        return new GrpcServerWrapper(server, registry, schemaReader, metricsService);
+    }
+
+    @Provides
+    @Singleton
+    public MetricsService provideMetricsService(CollectionRegistry registry,
+                                                @Named("HandlerExecutor") ThreadPoolExecutor handlerExecutor,
+                                                MemoryCircuitBreaker circuitBreaker) {
+        boolean enabled = !"false".equalsIgnoreCase(System.getenv("METRICS_ENABLED"));
+        if (!enabled) return new NoopMetricsService();
+        int port = 9090;
+        String portStr = System.getenv("METRICS_PORT");
+        if (portStr != null) {
+            try { port = Integer.parseInt(portStr); } catch (NumberFormatException ignored) {}
+        }
+        return new PrometheusMetricsService(port, registry, circuitBreaker, handlerExecutor);
+    }
+
+    @Provides
+    @Singleton
+    public MemoryCircuitBreaker provideCircuitBreaker() {
+        return RequestHandlerBase.getCircuitBreaker();
     }
 
     @Provides

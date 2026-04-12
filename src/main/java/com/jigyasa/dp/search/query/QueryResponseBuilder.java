@@ -50,7 +50,7 @@ public class QueryResponseBuilder {
                                 int offset, int topK, float minScore,
                                 List<String> sourceFields) throws Exception {
         return build(topDocs, searcher, schema, includeSource, offset, topK, minScore,
-                sourceFields, Collections.emptyMap());
+                sourceFields, Collections.emptyMap(), false);
     }
 
     public QueryResponse build(TopDocs topDocs, IndexSearcher searcher,
@@ -58,10 +58,21 @@ public class QueryResponseBuilder {
                                 int offset, int topK, float minScore,
                                 List<String> sourceFields,
                                 Map<String, FacetResult> facets) throws Exception {
+        return build(topDocs, searcher, schema, includeSource, offset, topK, minScore,
+                sourceFields, facets, false);
+    }
+
+    public QueryResponse build(TopDocs topDocs, IndexSearcher searcher,
+                                InitializedIndexSchema schema, boolean includeSource,
+                                int offset, int topK, float minScore,
+                                List<String> sourceFields,
+                                Map<String, FacetResult> facets,
+                                boolean timedOut) throws Exception {
         QueryResponse.Builder response = QueryResponse.newBuilder();
         response.setTotalHits(topDocs.totalHits.value());
         response.setTotalHitsExact(
-                minScore <= 0.0f && topDocs.totalHits.relation() == TotalHits.Relation.EQUAL_TO);
+                !timedOut && minScore <= 0.0f && topDocs.totalHits.relation() == TotalHits.Relation.EQUAL_TO);
+        response.setTimedOut(timedOut);
 
         boolean hasProjection = sourceFields != null && !sourceFields.isEmpty();
         Set<String> projectedFields = hasProjection ? Set.copyOf(sourceFields) : null;
